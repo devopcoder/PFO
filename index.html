@@ -52,7 +52,7 @@ body {
 </head>
 <body>
 
-<audio id="bgMusic" loop autoplay>
+<audio id="bgMusic" loop>
   <source src="bg-music.mp3" type="audio/mpeg">
 </audio>
 
@@ -70,6 +70,14 @@ body {
     <p>PH DDOS ATTACKER<br> YOU ARE BEEN HACK</p>
   </div>
 </div>
+<script>
+const music = document.getElementById("bgMusic");
 
+// play music after first click anywhere
+document.addEventListener("click", function() {
+  music.play();
+}, { once: true });
+</script>
+  
 </body>
 </html>

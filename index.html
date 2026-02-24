@@ -4,42 +4,72 @@
 <meta charset="UTF-8">
 <title>PH DDOS DOU</title>
 <style>
-body{margin:0;background:#000;color:#ccc;font-family:Arial;text-align:center}
-.wrapper{margin-top:70px}
-.logos{display:flex;justify-content:center;gap:40px;margin-bottom:25px}
-.logos img{width:200px;filter:drop-shadow(0 0 25px gba(0,255,0,.6))}
-.main-text{color:#ff3333;font-size:18px;letter-spacing:2px}
-#greet{margin-top:40px}
-#greet h2{color:#00ff9c;letter-spacing:3px}
-#musicBtn{position:fixed;bottom:20px;right:20px;background:#000;color:#00ff9c;border:1px solid #00ff9c;padding:8px}
+body {
+  margin: 0;
+  background: #000;
+  color: #ccc;
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+.wrapper {
+  margin-top: 70px;
+}
+.logos {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-bottom: 25px;
+}
+.logos img {
+  width: 200px;
+  filter: drop-shadow(0 0 25px rgba(0,255,0,0.6));
+  border-radius: 10px;
+}
+.main-text {
+  color: #ff3333;
+  font-size: 18px;
+  letter-spacing: 2px;
+  margin-bottom: 20px;
+}
+#greet {
+  margin-top: 40px;
+}
+#greet h2 {
+  color: #00ff9c;
+  letter-spacing: 3px;
+}
+#musicBtn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #000;
+  color: #00ff9c;
+  border: 1px solid #00ff9c;
+  padding: 8px;
+  cursor: pointer;
+}
 </style>
 </head>
 <body>
 
-<audio id="bgMusic" loop>
-<source src="bg-music.mp3" type="audio/mpeg">
+<audio id="bgMusic" loop autoplay>
+  <source src="bg-music.mp3" type="audio/mpeg">
 </audio>
 
-
 <div class="wrapper">
-<div class="logos">
-<img src="destroyer.png">
-<img src="synx4.png">
-</div>
+  <div class="logos">
+    <img src="destroyer.png" alt="Destroyer Logo">
+    <img src="synx4.png" alt="Synx4 Logo">
+    <img src="yvn.png" alt="YVN Logo"> <!-- iyong png file -->
+  </div>
 
-<div class="main-text">Hack by PH D3STROY3R // SYNX4</div>
+  <div class="main-text">Hack by PH D3STROY3R // SYNX4</div>
 
-<div id="greet">
-<h2>GREETINGS</h2>
-<p>PH DDOS ATTACKER<br> YOU ARE BEEN HACK</p>
+  <div id="greet">
+    <h2>GREETINGS</h2>
+    <p>PH DDOS ATTACKER<br> YOU ARE BEEN HACK</p>
+  </div>
 </div>
-</div>
-
-<script>
-const m=document.getElementById("bgMusic");
-const b=document.getElementById("musicBtn");
-b.onclick=()=>{m.paused?m.play():m.pause();}
-</script>
 
 </body>
 </html>

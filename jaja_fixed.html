@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Made For Jaja 🎀</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Quicksand:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --pink:    #f9c4d2;
+      --blush:   #fde8ef;
+      --lavender:#e8d5f5;
+      --mint:    #d5f0ea;
+      --cream:   #fff8f0;
+      --text:    #6b3a4f;
+      --accent:  #e07fa0;
+    }
+
+    body {
+      font-family: 'Quicksand', sans-serif;
+      background: var(--cream);
+      color: var(--text);
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* ── BACKGROUND BLOBS ── */
+    .bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      overflow: hidden;
+    }
+    .blob {
+      position: absolute; border-radius: 50%;
+      filter: blur(70px); opacity: .45;
+    }
+    .blob-1 { width:500px;height:500px; background:var(--pink);   top:-120px;left:-100px; animation:drift 12s ease-in-out infinite alternate; }
+    .blob-2 { width:400px;height:400px; background:var(--lavender);bottom:-80px;right:-80px; animation:drift 14s 2s ease-in-out infinite alternate-reverse; }
+    .blob-3 { width:300px;height:300px; background:var(--mint);   top:40%;left:55%; animation:drift 10s 1s ease-in-out infinite alternate; }
+    @keyframes drift { from{transform:translate(0,0) scale(1);} to{transform:translate(30px,25px) scale(1.08);} }
+
+    /* ── FLOATING HEARTS ── */
+    #hearts { position:fixed; inset:0; z-index:1; pointer-events:none; overflow:hidden; }
+    .heart {
+      position: absolute;
+      bottom: -60px;
+      font-size: 1.4rem;
+      animation: floatUp linear infinite;
+      opacity: 0;
+    }
+    @keyframes floatUp {
+      0%   { transform: translateY(0) rotate(-10deg); opacity:.8; }
+      80%  { opacity:.5; }
+      100% { transform: translateY(-110vh) rotate(15deg); opacity:0; }
+    }
+
+    /* ── MAIN WRAPPER ── */
+    .wrapper {
+      position: relative; z-index: 2;
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+      display: flex; flex-direction: column; align-items: center; gap: 40px;
+    }
+
+    /* ── HEADER ── */
+    .header { text-align: center; animation: fadeDown .8s ease both; }
+    .header .eyebrow {
+      font-family: 'Quicksand', sans-serif;
+      font-weight: 600; font-size: .85rem; letter-spacing: .18em;
+      text-transform: uppercase; color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .header h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2.2rem, 6vw, 3.4rem);
+      line-height: 1.15;
+      color: var(--text);
+    }
+    .header h1 span { color: var(--accent); font-style: italic; }
+    .header .subtitle {
+      margin-top: 10px; font-size: .95rem; color: #a07080; font-weight:500;
+    }
+
+    @keyframes fadeDown { from{opacity:0;transform:translateY(-28px);} to{opacity:1;transform:none;} }
+
+    /* ── PHOTO CARD ── */
+    .photo-wrap {
+      animation: popIn .9s .3s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    @keyframes popIn { from{opacity:0;transform:scale(.6) rotate(-4deg);} to{opacity:1;transform:scale(1) rotate(-1.5deg);} }
+
+    .photo-card {
+      width: 260px; height: 300px;
+      border-radius: 22px;
+      background: var(--blush);
+      border: 3px solid #fff;
+      box-shadow: 0 10px 40px rgba(200,100,130,.25), 0 2px 8px rgba(0,0,0,.07);
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform .3s ease, box-shadow .3s ease;
+    }
+    .photo-card:hover { transform: scale(1.04) rotate(0deg); box-shadow: 0 18px 50px rgba(200,100,130,.35); }
+
+    /* Photo — replace src with your image file */
+    .photo-card img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Overlay shimmer on hover */
+    .photo-card::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,.25) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    /* Sticker */
+    .sticker {
+      position: absolute;
+      bottom: -14px; right: -14px;
+      width: 64px; height: 64px;
+      background: white;
+      border-radius: 50%;
+      border: 3px solid var(--pink);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.8rem;
+      box-shadow: 0 4px 14px rgba(0,0,0,.1);
+      animation: spin 6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .photo-label {
+      margin-top: 22px;
+      text-align: center;
+      font-family: 'Playfair Display', serif;
+      font-style: italic;
+      color: var(--accent);
+      font-size: 1rem;
+    }
+
+    /* ── LETTER ── */
+    .letter-wrap { width: 100%; animation: fadeUp .9s .55s ease both; }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(30px);} to{opacity:1;transform:none;} }
+
+    .letter {
+      background: white;
+      border-radius: 24px;
+      padding: 36px 32px;
+      box-shadow: 0 8px 30px rgba(200,100,130,.12), 0 2px 8px rgba(0,0,0,.05);
+      border: 2px solid rgba(249,196,210,.6);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .letter::before {
+      content: '💌';
+      position: absolute; top: 18px; right: 22px;
+      font-size: 2rem; opacity: .3;
+    }
+
+    .letter-tag {
+      display: inline-block;
+      background: var(--pink);
+      color: var(--text);
+      font-size: .75rem; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase;
+      padding: 4px 12px; border-radius: 99px;
+      margin-bottom: 18px;
+    }
+
+    .letter h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.5rem; margin-bottom: 16px;
+      color: var(--text);
+    }
+
+    .letter p {
+      font-size: 1rem; line-height: 1.85;
+      color: #7a4f62; margin-bottom: 12px;
+    }
+
+    .letter .sign {
+      margin-top: 24px;
+      font-family: 'Playfair Display', serif;
+      font-style: italic;
+      font-size: 1.1rem;
+      color: var(--accent);
+    }
+
+    /* ── PILLS / TAGS ── */
+    .tags { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; animation: fadeUp .9s .75s ease both; }
+    .tag {
+      padding: 8px 18px;
+      border-radius: 99px;
+      font-size: .85rem; font-weight: 600;
+      background: white;
+      border: 2px solid var(--pink);
+      color: var(--text);
+      box-shadow: 0 2px 8px rgba(200,100,130,.1);
+      transition: transform .2s, background .2s;
+      cursor: default;
+    }
+    .tag:hover { transform: translateY(-3px) scale(1.05); background: var(--blush); }
+
+    /* ── FOOTER ── */
+    .footer {
+      text-align: center;
+      font-size: .82rem; color: #b090a0;
+      animation: fadeUp .9s .9s ease both;
+    }
+    .footer span { color: var(--accent); }
+
+    /* ── CONFETTI BURST (on card click) ── */
+    .confetti-piece {
+      position: fixed;
+      width: 8px; height: 8px;
+      border-radius: 2px;
+      pointer-events: none;
+      z-index: 999;
+      animation: confettiFall 1.2s ease forwards;
+    }
+    @keyframes confettiFall {
+      0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(300px) rotate(720deg); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- BG BLOBS -->
+  <div class="bg">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <!-- FLOATING HEARTS -->
+  <div id="hearts"></div>
+
+  <div class="wrapper">
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="eyebrow">especially made for</div>
+      <h1>Jaja kung <span>makulit</span> 🎀</h1>
+      <div class="subtitle">ikaw ang pinakamakulit na tao sa mundo ko ✨</div>
+    </div>
+
+    <!-- PHOTO -->
+    <div class="photo-wrap">
+      <div class="photo-card" id="photoCard" onclick="burst(event)">
+        <!--
+          ✅ HOW TO USE YOUR PHOTO:
+          Place your image file (e.g. "myphoto.jpg") in the SAME folder as this HTML file,
+          then change the src below to match your filename.
+          Example: src="myphoto.jpg"
+        -->
+        <img src="https://raw.githubusercontent.com/devopcoder/PFO/main/Messenger_creation_EA6EB727-15F3-4395-91E6-8CDFDDAF9940.jpeg" alt="Jaja" onerror="this.style.display='none'; this.parentElement.style.background='linear-gradient(135deg,#fde8ef,#e8d5f5)'; this.parentElement.insertAdjacentHTML('beforeend','<div style=\'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;\'><span style=\'font-size:3rem;\'>🌸</span><span style=\'font-size:.8rem;color:#a07080;font-weight:600;\'>Lagay mo dito<br>ang pic mo!</span></div>')"/>
+        <div class="sticker">🌸</div>
+      </div>
+      <div class="photo-label">ang aking paboritong makulit 💕</div>
+    </div>
+
+    <!-- LOVE LETTER -->
+    <div class="letter-wrap">
+      <div class="letter">
+        <div class="letter-tag">💌 para sa iyo</div>
+        <h2>Dear Jaja,</h2>
+        <p>
+          Alam mo ba? Sa lahat ng makulit na tao sa mundo, ikaw ang pinaka-espesyal. 
+          Hindi ko alam kung paano mo nagagawa, pero kahit nakakainis kang maging makulit — 
+          palagi mo pa rin akong napapangiti. 🌷
+        </p>
+        <p>
+          Masaya akong may katulad mong kasama — yung hindi nagpapagod mag-smile, 
+          laging may kwentong ipinagmamalaki, at palaging nandoon kahit kelan.
+        </p>
+        <p>
+          Sana alam mo na kahit gaano ka pa ka-makulit, palagi kang may espesyal na lugar dito. 
+          This page? Made just for you. 🎀
+        </p>
+        <div class="sign">— para sayo, palagi 💗</div>
+      </div>
+    </div>
+
+    <!-- TAGS -->
+    <div class="tags">
+      <div class="tag">🌸 sobrang cute</div>
+      <div class="tag">✨ makulit pero adorable</div>
+      <div class="tag">🎀 espesyal</div>
+      <div class="tag">💕 best vibes</div>
+      <div class="tag">🌷 favorite na tao</div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      Made with <span>♥</span> for the most makulit person I know
+    </div>
+
+  </div>
+
+  <script>
+    /* ── FLOATING HEARTS ── */
+    const HEARTS = ['💗','💖','💕','🌸','✨','💝','🌷','💓'];
+    const container = document.getElementById('hearts');
+
+    function spawnHeart() {
+      const h = document.createElement('div');
+      h.className = 'heart';
+      h.textContent = HEARTS[Math.floor(Math.random() * HEARTS.length)];
+      h.style.left = Math.random() * 100 + 'vw';
+      const dur = 6 + Math.random() * 8;
+      h.style.animationDuration = dur + 's';
+      h.style.animationDelay = Math.random() * 4 + 's';
+      h.style.fontSize = (.8 + Math.random() * 1.2) + 'rem';
+      container.appendChild(h);
+      setTimeout(() => h.remove(), (dur + 4) * 1000);
+    }
+
+    // Initial burst
+    for (let i = 0; i < 18; i++) setTimeout(spawnHeart, i * 300);
+    setInterval(spawnHeart, 900);
+
+    /* ── CONFETTI BURST on photo click ── */
+    const COLORS = ['#f9c4d2','#e8d5f5','#d5f0ea','#fde8ef','#ffd6e7','#c9b8f5'];
+    function burst(e) {
+      for (let i = 0; i < 30; i++) {
+        const c = document.createElement('div');
+        c.className = 'confetti-piece';
+        c.style.left = e.clientX + 'px';
+        c.style.top  = e.clientY + 'px';
+        c.style.background = COLORS[Math.floor(Math.random() * COLORS.length)];
+        const angle = Math.random() * 360;
+        const dist  = 60 + Math.random() * 120;
+        c.style.transform = `translate(${Math.cos(angle)*dist}px, ${Math.sin(angle)*dist}px)`;
+        document.body.appendChild(c);
+        setTimeout(() => c.remove(), 1300);
+      }
+    }
+  </script>
+</body>
+</html>

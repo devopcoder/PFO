@@ -1,11 +1,12 @@
 /* ============================================================================
-   D3S BOT — v2.9
-   GIF header · quick replies · reaction indicator · all commands preserved
+   D3S BOT — v3.1
+   GIF header · quick replies · reaction indicator · uptime · AM flow v2
    ============================================================================ */
 
 /* ------------------------------------------------------------------ CONFIG */
 
-const VERSION = 'bot-v2.9';
+const VERSION = 'bot-v3.1';
+const START_TIME = Date.now();
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -17,15 +18,18 @@ const GRAPH         = 'https://graph.facebook.com/v20.0';
 const VERCEL_RELAY  = 'https://nglspammer2.vercel.app/api/relay';
 const VERCEL_SMS    = 'https://sms-jsiej.vercel.app/api/sms';
 const VERCEL_AM     = 'https://am-premium-eight.vercel.app/api/am';
-const BYPASS_PROXY  = 'https://bypass-proxy.marcelochristann.workers.dev';
 
 const GIF_URL      = 'https://i.imgur.com/PadgzEK.gif';
 const SEND_GAP_MS  = 1200;
 
-/* Reaction emojis */
 const EMOJI_START = '👀';
 const EMOJI_DONE  = '✅';
 const EMOJI_FAIL  = '❌';
+
+/* AM email cache TTL: 5 minutes */
+const AM_KV_TTL_SECONDS = 300;
+/* Delete delay after activation: 10 seconds */
+const AM_DELETE_DELAY_MS = 10000;
 
 /* -------------------------------------------------------------- UTILITIES */
 
@@ -65,6 +69,27 @@ const json = (data, status = 200) =>
   });
 
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+function formatUptime(ms) {
+  const sec = Math.floor(ms / 1000);
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const parts = [];
+  if (d) parts.push(d + 'd');
+  if (h) parts.push(h + 'h');
+  if (m) parts.push(m + 'm');
+  parts.push(s + 's');
+  return parts.join(' ');
+}
+
+/* Detect if text looks like a magic link */
+function looksLikeMagicLink(text) {
+  return /^https?:\/\/\S+\.(firebaseapp\.com|alightcreative\.com|google\.com)\S*/i.test(text)
+      || /oobCode=/i.test(text)
+      || /mode=signIn/i.test(text);
+}
 
 async function post(url, headers, body, timeoutMs = 8000) {
   try {
@@ -114,16 +139,12 @@ async function sendMessage(env, psid, message) {
   }
 }
 
-/* Add or change a reaction on a user's message. */
 async function react(env, psid, mid, emoji) {
   const url = `${GRAPH}/me/messages?access_token=${env.PAGE_TOKEN}`;
   const body = {
     recipient: { id: psid },
     sender_action: 'react',
-    payload: {
-      message_id: mid,
-      reaction: emoji,
-    },
+    payload: { message_id: mid, reaction: emoji },
   };
   try {
     const r = await fetch(url, {
@@ -140,7 +161,6 @@ async function react(env, psid, mid, emoji) {
   }
 }
 
-/* GIF header + welcome text with quick replies */
 async function sendGifHeader(env, psid) {
   const gifRes = await sendMessage(env, psid, {
     attachment: {
@@ -148,21 +168,18 @@ async function sendGifHeader(env, psid) {
       payload: { url: GIF_URL, is_reusable: true },
     },
   });
-
   await sleep(SEND_GAP_MS);
-
+  const up = formatUptime(Date.now() - START_TIME);
   await sendMessage(env, psid, {
-    text: 'Welcome! Choose an option below.',
+    text: 'D3S BOT · online ' + up + '\nWelcome! Choose an option below.',
     quick_replies: [
       { content_type: 'text', title: '📊 Menu', payload: 'MENU' },
       { content_type: 'text', title: 'ℹ️ Info', payload: 'INFO' },
     ],
   });
-
   return gifRes;
 }
 
-/* GIF + custom text body (no quick replies) */
 async function sendGifAndText(env, psid, text) {
   await sendMessage(env, psid, {
     attachment: {
@@ -456,7 +473,7 @@ async function smsBatch(phone, services, rounds, sender, msg) {
   return cf;
 }
 
-/* -------------------------------------------------------------- AM + BYPASS */
+/* -------------------------------------------------------------- AM ENGINE */
 
 async function amSendMagicLink(email) {
   try {
@@ -493,21 +510,45 @@ async function amApply(email, idToken) {
   }
 }
 
-async function bypassUrl(url) {
+/* Save email to KV with 5-minute TTL */
+async function amSaveEmail(env, psid, email) {
+  if (!env || !env.AM_KV) return false;
   try {
-    const r = await fetch(BYPASS_PROXY + '/api/bypass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
-    const j = await r.json();
-    const direct = j.direct || j.result || j.destination || null;
-    return { ok: !!(j.success || j.ok) && !!direct, direct, error: j.error || j.msg || '', raw: j };
+    await env.AM_KV.put('am:' + psid, email, { expirationTtl: AM_KV_TTL_SECONDS });
+    return true;
   } catch (e) {
-    return { ok: false, direct: null, error: String(e), raw: {} };
+    console.error('AM KV put failed', String(e));
+    return false;
+  }
+}
+
+/* Load email from KV */
+async function amLoadEmail(env, psid) {
+  if (!env || !env.AM_KV) return null;
+  try {
+    return await env.AM_KV.get('am:' + psid);
+  } catch (e) {
+    console.error('AM KV get failed', String(e));
+    return null;
+  }
+}
+
+/* Delete email from KV */
+async function amDeleteEmail(env, psid) {
+  if (!env || !env.AM_KV) return;
+  try {
+    await env.AM_KV.delete('am:' + psid);
+  } catch (e) {
+    console.error('AM KV delete failed', String(e));
   }
 }
 
 /* -------------------------------------------------------------- COMMANDS */
 
-const COMMANDS_TEXT =
-`D3S BOT v2.9
+function commandsText() {
+  const up = formatUptime(Date.now() - START_TIME);
+  return `D3S BOT ${VERSION}
+uptime: ${up}
 
 NGL
   test <user>
@@ -519,17 +560,15 @@ SMS
   smshelp
 
 AM
-  am <email>
-  amverify <email> <link>
-
-BYPASS
-  bypass <url>
+  am <email>       send magic link
+  <link>           just paste the link to verify
 
 MISC
   menu
   info
   ping
   ..`;
+}
 
 async function handleCommand(env, psid, rawText) {
   const text = (rawText || '').trim();
@@ -543,11 +582,12 @@ async function handleCommand(env, psid, rawText) {
 
   /* INFO */
   if (lower === 'info' || lower === 'help') {
-    return sendGifAndText(env, psid, COMMANDS_TEXT);
+    return sendGifAndText(env, psid, commandsText());
   }
 
   if (lower === 'ping') {
-    return replyText(env, psid, 'PONG ' + new Date().toISOString());
+    const up = formatUptime(Date.now() - START_TIME);
+    return replyText(env, psid, 'PONG ' + new Date().toISOString() + '\nuptime: ' + up);
   }
 
   if (text === '..') {
@@ -558,22 +598,82 @@ async function handleCommand(env, psid, rawText) {
       pageName = j.name || 'unknown';
       pageId = j.id || 'unknown';
     } catch (e) {}
-    return replyText(env, psid, `DEEP STATUS\n  ver ${VERSION}\n  page ${pageName}\n  id ${pageId}`);
+    const up = formatUptime(Date.now() - START_TIME);
+    return replyText(env, psid,
+      `DEEP STATUS\n  ver ${VERSION}\n  uptime ${up}\n  page ${pageName}\n  id ${pageId}`);
   }
 
+  /* AM: bare link — verify + apply using saved email */
+  if (looksLikeMagicLink(text)) {
+    const email = await amLoadEmail(env, psid);
+    if (!email) {
+      return replyText(env, psid,
+        'No saved email for this chat.\n\n' +
+        'First send:  am you@gmail.com\n' +
+        'Then paste the magic link here.');
+    }
+
+    await replyText(env, psid, 'AM VERIFY\n  email ' + email);
+    const v = await amVerify(email, text);
+    if (!v.idToken) {
+      return sendGifAndText(env, psid, 'AM VERIFY FAILED\n  ' + JSON.stringify(v.upstream).slice(0, 200));
+    }
+    await replyText(env, psid, 'VERIFIED. activating premium...');
+    const a = await amApply(email, v.idToken);
+    if (a.upstream && a.upstream.success) {
+      await sendGifAndText(env, psid,
+        'AM PREMIUM ACTIVE\n  email ' + email + '\n  status ACTIVE\n\n' +
+        'Cleaning up in 10 seconds.');
+      setTimeout(() => amDeleteEmail(env, psid), AM_DELETE_DELAY_MS);
+      return;
+    }
+    return sendGifAndText(env, psid, 'AM PREMIUM FAILED\n  ' + JSON.stringify(a.upstream).slice(0, 200));
+  }
+
+  /* AM: am <email> — save email + send magic link */
+  if (lower.startsWith('am ')) {
+    const email = text.split(/\s+/)[1];
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return replyText(env, psid, 'USAGE: am <email>');
+    }
+    await replyText(env, psid, 'AM SEND LINK\n  email ' + email);
+    const r = await amSendMagicLink(email);
+    if (r.upstream && r.upstream.success) {
+      const saved = await amSaveEmail(env, psid, email);
+      return sendGifAndText(env, psid,
+        'AM LINK SENT\n  email ' + email + '\n  check inbox/spam\n\n' +
+        (saved
+          ? 'NEXT: paste the magic link here.\nEmail saved for 5 minutes.'
+          : 'WARNING: could not save email. Send am <email> again after pasting link.'));
+    }
+    return sendGifAndText(env, psid, 'AM FAILED\n  ' + JSON.stringify(r.upstream).slice(0, 200));
+  }
+
+  /* Legacy amverify — still supported */
+  if (lower.startsWith('amverify ')) {
+    const parts = text.split(/\s+/);
+    if (parts.length < 3) return replyText(env, psid, 'USAGE: amverify <email> <link>');
+    const email = parts[1];
+    const rawLink = parts.slice(2).join(' ');
+    await replyText(env, psid, 'AM VERIFY\n  email ' + email);
+    const v = await amVerify(email, rawLink);
+    if (!v.idToken) return sendGifAndText(env, psid, 'AM VERIFY FAILED\n  ' + JSON.stringify(v.upstream).slice(0, 200));
+    await replyText(env, psid, 'VERIFIED. activating premium...');
+    const a = await amApply(email, v.idToken);
+    if (a.upstream && a.upstream.success) {
+      await sendGifAndText(env, psid, 'AM PREMIUM ACTIVE\n  email ' + email + '\n  status ACTIVE');
+      setTimeout(() => amDeleteEmail(env, psid), AM_DELETE_DELAY_MS);
+      return;
+    }
+    return sendGifAndText(env, psid, 'AM PREMIUM FAILED\n  ' + JSON.stringify(a.upstream).slice(0, 200));
+  }
+
+  /* Plain non-AM URL — echo only */
   if (/^https?:\/\//i.test(text)) {
     return sendGifAndText(env, psid, 'Link received:\n' + text);
   }
 
-  if (lower.startsWith('bypass ')) {
-    const url = text.slice(7).trim();
-    if (!url) return replyText(env, psid, 'USAGE: bypass <url>');
-    await replyText(env, psid, 'BYPASS REQUEST\n  ' + url.slice(0, 70));
-    const r = await bypassUrl(url);
-    if (r.ok && r.direct) return sendGifAndText(env, psid, 'BYPASS DONE\n  ' + r.direct);
-    return sendGifAndText(env, psid, 'BYPASS FAILED\n  ' + (r.error || 'unknown error'));
-  }
-
+  /* NGL */
   if (lower.startsWith('test ')) {
     const user = text.split(/\s+/)[1];
     if (!user) return replyText(env, psid, 'USAGE: test <user>');
@@ -598,6 +698,7 @@ async function handleCommand(env, psid, rawText) {
       '  404     ' + stats.fof + '\n  errors  ' + stats.err + '\n  elapsed ' + stats.elapsed + 's');
   }
 
+  /* SMS */
   if (lower === 'smshelp') {
     let out = 'SMS SERVICES (' + SMS_NAMES.length + ')\n';
     SMS_NAMES.forEach((n, i) => { out += '  ' + String(i + 1).padStart(2, ' ') + '. ' + n + '\n'; });
@@ -629,39 +730,7 @@ async function handleCommand(env, psid, rawText) {
     return sendGifAndText(env, psid, 'SMS DONE\n  rounds ' + stats.rounds + '\n  sent  ' + stats.ok + '  (' + (stats.via || 'cf') + ')\n  fail  ' + stats.fail);
   }
 
-  if (lower === 'amhelp') {
-    return sendGifAndText(env, psid,
-      'ALIGHT MOTION FLOW\n\nSTEP 1\n  am <email>\n  -> magic link sent\n\nSTEP 2\n  open email, copy link\n\nSTEP 3\n  amverify <email> <link>');
-  }
-
-  if (lower.startsWith('amverify ')) {
-    const parts = text.split(/\s+/);
-    if (parts.length < 3) return replyText(env, psid, 'USAGE: amverify <email> <link>');
-    const email = parts[1];
-    const rawLink = parts.slice(2).join(' ');
-    await replyText(env, psid, 'AM VERIFY\n  email ' + email);
-    const v = await amVerify(email, rawLink);
-    if (!v.idToken) return sendGifAndText(env, psid, 'AM VERIFY FAILED\n  ' + JSON.stringify(v.upstream).slice(0, 200));
-    await replyText(env, psid, 'VERIFIED. activating premium...');
-    const a = await amApply(email, v.idToken);
-    if (a.upstream && a.upstream.success) {
-      return sendGifAndText(env, psid, 'AM PREMIUM ACTIVE\n  email ' + email + '\n  status ACTIVE');
-    }
-    return sendGifAndText(env, psid, 'AM PREMIUM FAILED\n  ' + JSON.stringify(a.upstream).slice(0, 200));
-  }
-
-  if (lower.startsWith('am ')) {
-    const email = text.split(/\s+/)[1];
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return replyText(env, psid, 'USAGE: am <email>');
-    await replyText(env, psid, 'AM SEND LINK\n  email ' + email);
-    const r = await amSendMagicLink(email);
-    if (r.upstream && r.upstream.success) {
-      return sendGifAndText(env, psid, 'AM LINK SENT\n  email ' + email + '\n  check inbox/spam\n\nNEXT: amverify ' + email + ' <link>');
-    }
-    return sendGifAndText(env, psid, 'AM FAILED\n  ' + JSON.stringify(r.upstream).slice(0, 200));
-  }
-
-  return sendGifAndText(env, psid, 'Unknown command. Send "menu".\n\n' + COMMANDS_TEXT);
+  return sendGifAndText(env, psid, 'Unknown command. Send "menu".\n\n' + commandsText());
 }
 
 /* -------------------------------------------------------------- HTTP ROUTER */
@@ -675,7 +744,6 @@ export default {
         return new Response(null, { status: 204, headers: { ...CORS, 'X-Worker-Version': VERSION } });
       }
 
-      /* PRIVACY (preserved) */
       if (url.pathname === '/privacy') {
         return new Response(
 `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Privacy Policy</title></head>
@@ -686,7 +754,6 @@ export default {
           { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
       }
 
-      /* WEBHOOK VERIFY (preserved) */
       if (url.pathname === '/webhook' && request.method === 'GET') {
         const mode      = url.searchParams.get('hub.mode');
         const token     = url.searchParams.get('hub.verify_token');
@@ -697,7 +764,6 @@ export default {
         return new Response('Forbidden', { status: 403 });
       }
 
-      /* WEBHOOK EVENTS (preserved, now passes mid for reaction) */
       if (url.pathname === '/webhook' && request.method === 'POST') {
         const raw = await request.text();
         let data;
@@ -732,7 +798,6 @@ export default {
         return new Response('EVENT_RECEIVED', { status: 200 });
       }
 
-      /* DIAG */
       if (url.pathname === '/api' && request.method === 'GET' && url.searchParams.get('diag') === '1') {
         let me = null, meErr = null;
         try {
@@ -741,14 +806,16 @@ export default {
         } catch (e) { meErr = String(e); }
         return json({
           ok: true, version: VERSION,
+          uptime: formatUptime(Date.now() - START_TIME),
+          started_at: new Date(START_TIME).toISOString(),
           has_verify_token: !!env.VERIFY_TOKEN,
           has_page_token: !!env.PAGE_TOKEN,
+          has_am_kv: !!env.AM_KV,
           gif_url: GIF_URL,
           page: me, page_error: meErr, ts: Date.now(),
         });
       }
 
-      /* MANUAL NGL RELAY */
       if (url.pathname === '/api') {
         if (request.method !== 'POST') return json({ ok: false, msg: 'POST only' }, 405);
         let body = {};

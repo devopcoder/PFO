@@ -1,9 +1,6 @@
 /* ============================================================================
    D3S BOT — v2.9
-   GIF header + welcome text with quick replies
-   Reactions (👀 / ✅ / ❌) on every command
-   No image attachment — sends only text + quick replies
-   /privacy and /webhook preserved.
+   GIF header · quick replies · reaction indicator · all commands preserved
    ============================================================================ */
 
 /* ------------------------------------------------------------------ CONFIG */
@@ -22,9 +19,13 @@ const VERCEL_SMS    = 'https://sms-jsiej.vercel.app/api/sms';
 const VERCEL_AM     = 'https://am-premium-eight.vercel.app/api/am';
 const BYPASS_PROXY  = 'https://bypass-proxy.marcelochristann.workers.dev';
 
-/* GIF is sent as a link button (no attachment). */
-const GIF_URL = 'https://i.imgur.com/PadgzEK.gif';
-const SEND_GAP_MS = 900;
+const GIF_URL      = 'https://i.imgur.com/PadgzEK.gif';
+const SEND_GAP_MS  = 1200;
+
+/* Reaction emojis */
+const EMOJI_START = '👀';
+const EMOJI_DONE  = '✅';
+const EMOJI_FAIL  = '❌';
 
 /* -------------------------------------------------------------- UTILITIES */
 
@@ -98,7 +99,7 @@ async function sendMessage(env, psid, message) {
       try {
         const j = JSON.parse(txt);
         const code = j.error && j.error.code;
-        const sub  = j.error && j.error.subcode;
+        const sub  = j.error && j.error.error_subcode;
         if (code === 10 || sub === 1893063) {
           console.error('PAGE RESTRICTED — SKIP');
           return { ok: false, status: r.status, body: 'restricted' };
@@ -113,7 +114,7 @@ async function sendMessage(env, psid, message) {
   }
 }
 
-/* Reaction on the user's message. */
+/* Add or change a reaction on a user's message. */
 async function react(env, psid, mid, emoji) {
   const url = `${GRAPH}/me/messages?access_token=${env.PAGE_TOKEN}`;
   const body = {
@@ -139,44 +140,42 @@ async function react(env, psid, mid, emoji) {
   }
 }
 
-/* GIF is sent as a button template with a web_url pointing to the GIF.
-   No attachment, so image restrictions do not apply. */
+/* GIF header + welcome text with quick replies */
 async function sendGifHeader(env, psid) {
-  await sendMessage(env, psid, {
+  const gifRes = await sendMessage(env, psid, {
     attachment: {
-      type: 'template',
-      payload: {
-        template_type: 'button',
-        text: 'D3S BOT v2.9 — Welcome. Tap a button below.',
-        buttons: [
-          {
-            type: 'web_url',
-            title: '📊 Open Menu',
-            url: GIF_URL,
-            webview_height_ratio: 'full',
-          },
-          {
-            type: 'postback',
-            title: 'ℹ️ Commands',
-            payload: 'INFO',
-          },
-        ],
-      },
+      type: 'image',
+      payload: { url: GIF_URL, is_reusable: true },
     },
   });
 
   await sleep(SEND_GAP_MS);
+
+  await sendMessage(env, psid, {
+    text: 'Welcome! Choose an option below.',
+    quick_replies: [
+      { content_type: 'text', title: '📊 Menu', payload: 'MENU' },
+      { content_type: 'text', title: 'ℹ️ Info', payload: 'INFO' },
+    ],
+  });
+
+  return gifRes;
 }
 
-/* Plain text reply. Used for command output. */
-async function replyText(env, psid, text) {
+/* GIF + custom text body (no quick replies) */
+async function sendGifAndText(env, psid, text) {
+  await sendMessage(env, psid, {
+    attachment: {
+      type: 'image',
+      payload: { url: GIF_URL, is_reusable: true },
+    },
+  });
+  await sleep(SEND_GAP_MS);
   return sendMessage(env, psid, { text: String(text).slice(0, 1900) });
 }
 
-/* Send GIF button card, then a custom text body. */
-async function sendGifAndText(env, psid, text) {
-  await sendGifHeader(env, psid);
-  await replyText(env, psid, text);
+async function replyText(env, psid, text) {
+  return sendMessage(env, psid, { text: String(text).slice(0, 1900) });
 }
 
 /* -------------------------------------------------------------- NGL ENGINE */
@@ -537,11 +536,12 @@ async function handleCommand(env, psid, rawText) {
   const lower = text.toLowerCase();
   if (!text) return;
 
-  /* MENU — button template + commands text */
+  /* MENU */
   if (lower === 'menu' || lower === 'start' || lower === '?' || text === '.') {
     return sendGifHeader(env, psid);
   }
 
+  /* INFO */
   if (lower === 'info' || lower === 'help') {
     return sendGifAndText(env, psid, COMMANDS_TEXT);
   }
@@ -631,7 +631,7 @@ async function handleCommand(env, psid, rawText) {
 
   if (lower === 'amhelp') {
     return sendGifAndText(env, psid,
-      'ALIGHT MOTION FLOW\n\nSTEP 1\n  am <email>\n\nSTEP 2\n  open email, copy link\n\nSTEP 3\n  amverify <email> <link>');
+      'ALIGHT MOTION FLOW\n\nSTEP 1\n  am <email>\n  -> magic link sent\n\nSTEP 2\n  open email, copy link\n\nSTEP 3\n  amverify <email> <link>');
   }
 
   if (lower.startsWith('amverify ')) {
@@ -675,7 +675,7 @@ export default {
         return new Response(null, { status: 204, headers: { ...CORS, 'X-Worker-Version': VERSION } });
       }
 
-      /* -------- PRIVACY -------- */
+      /* PRIVACY (preserved) */
       if (url.pathname === '/privacy') {
         return new Response(
 `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Privacy Policy</title></head>
@@ -686,7 +686,7 @@ export default {
           { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
       }
 
-      /* -------- WEBHOOK VERIFY -------- */
+      /* WEBHOOK VERIFY (preserved) */
       if (url.pathname === '/webhook' && request.method === 'GET') {
         const mode      = url.searchParams.get('hub.mode');
         const token     = url.searchParams.get('hub.verify_token');
@@ -697,7 +697,7 @@ export default {
         return new Response('Forbidden', { status: 403 });
       }
 
-      /* -------- WEBHOOK EVENTS -------- */
+      /* WEBHOOK EVENTS (preserved, now passes mid for reaction) */
       if (url.pathname === '/webhook' && request.method === 'POST') {
         const raw = await request.text();
         let data;
@@ -708,28 +708,31 @@ export default {
           for (const m of (entry.messaging || [])) {
             const psid = m.sender && m.sender.id;
             if (!psid) continue;
-            const text     = (m.message && m.message.text) || '';
-            const postback = (m.postback && m.postback.payload) || '';
-            const mid      = (m.message && m.message.mid) || '';
-            const cmd = text || postback;
+            const text = (m.message && m.message.text) || '';
+            const mid  = (m.message && m.message.mid)  || '';
+            if (!text) continue;
 
-            if (cmd) {
-              ctx.waitUntil((async () => {
-                if (mid) await react(env, psid, mid, '👀');
-                try {
-                  await handleCommand(env, psid, cmd);
-                  if (mid) await react(env, psid, mid, '✅');
-                } catch (e) {
-                  if (mid) await react(env, psid, mid, '❌');
-                }
-              })());
-            }
+            ctx.waitUntil((async () => {
+              if (mid) {
+                try { await react(env, psid, mid, EMOJI_START); } catch (e) {}
+              }
+              let ok = true;
+              try {
+                await handleCommand(env, psid, text);
+              } catch (e) {
+                ok = false;
+                console.error('handleCommand exception', String(e));
+              }
+              if (mid) {
+                try { await react(env, psid, mid, ok ? EMOJI_DONE : EMOJI_FAIL); } catch (e) {}
+              }
+            })());
           }
         }
         return new Response('EVENT_RECEIVED', { status: 200 });
       }
 
-      /* -------- DIAG -------- */
+      /* DIAG */
       if (url.pathname === '/api' && request.method === 'GET' && url.searchParams.get('diag') === '1') {
         let me = null, meErr = null;
         try {
@@ -745,7 +748,7 @@ export default {
         });
       }
 
-      /* -------- NGL RELAY API -------- */
+      /* MANUAL NGL RELAY */
       if (url.pathname === '/api') {
         if (request.method !== 'POST') return json({ ok: false, msg: 'POST only' }, 405);
         let body = {};

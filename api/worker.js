@@ -1,26 +1,14 @@
 /* ============================================================================
-   D3S BOT — v2.5
+   D3S BOT — v2.6
    NGL · SMS · AM · Bypass · Messenger Card Menu
-   Persistent GIF header · reusable card component
-   For authorized penetration testing only.
-
-   SECTION MAP
-     §1  CONFIG
-     §2  UTILITIES
-     §3  CARD SYSTEM (sendGifCard)
-     §4  NGL ENGINE
-     §5  SMS ENGINE
-     §6  AM + BYPASS
-     §7  COMMAND HANDLER
-     §8  HTTP ROUTER
+   Two-level home menu · GIF header served via Worker
    ============================================================================ */
-
 
 /* ============================================================================
    §1  CONFIG
    ============================================================================ */
 
-const VERSION = 'bot-v2.5';
+const VERSION = 'bot-v2.6';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -34,16 +22,40 @@ const VERCEL_SMS    = 'https://sms-jsiej.vercel.app/api/sms';
 const VERCEL_AM     = 'https://am-premium-eight.vercel.app/api/am';
 const BYPASS_PROXY  = 'https://bypass-proxy.marcelochristann.workers.dev';
 
-/* Persistent GIF header — served raw from GitHub.
-   Meta fetches this on its side. Renders as first frame. */
-const GIF_HEADER = 'https://raw.githubusercontent.com/Darknessking09/Monitorv1/main/open-sora-ezgif.com-gif-maker.gif';
-const GITHUB_URL = 'https://github.com/Darknessking09/Monitorv1';
-const CARD_TITLE = 'Monitorv1';
+/* GIF header served by this same Worker at /header.gif.
+   Meta fetches this and gets Content-Type: image/gif. */
+const GIF_HEADER  = 'https://dawn-sea-fdaa.marcelochristann.workers.dev/header.gif';
+const GIF_SOURCE  = 'https://github.com/Darknessking09/Monitorv1/raw/refs/heads/main/open-sora-ezgif.com-gif-maker.gif';
+const GITHUB_URL  = 'https://github.com/Darknessking09/Monitorv1';
+const CARD_TITLE  = 'D3S BOT';
 
+/* Level 1 home menu */
 const HOME_BUTTONS = [
-  { type: 'postback', title: '📊 Monitor', payload: 'MONITOR' },
-  { type: 'postback', title: 'ℹ️ Info',    payload: 'INFO' },
-  { type: 'web_url',  title: '🔗 GitHub',  url: GITHUB_URL, webview_height_ratio: 'full' },
+  { type: 'postback', title: '🛠️ Tools',  payload: 'MENU_TOOLS' },
+  { type: 'postback', title: '📊 Status', payload: 'MENU_STATUS' },
+  { type: 'postback', title: 'ℹ️ Help',   payload: 'MENU_HELP' },
+];
+
+/* Level 2 tools menu */
+const TOOLS_BUTTONS = [
+  { type: 'postback', title: '📨 NGL',  payload: 'MENU_NGL' },
+  { type: 'postback', title: '📱 SMS',  payload: 'MENU_SMS' },
+  { type: 'postback', title: '🎬 AM',   payload: 'MENU_AM' },
+];
+
+const NGL_BUTTONS = [
+  { type: 'postback', title: '◀ Back', payload: 'MENU_TOOLS' },
+  { type: 'postback', title: 'ℹ️ Help', payload: 'HELP_NGL' },
+];
+
+const SMS_BUTTONS = [
+  { type: 'postback', title: '◀ Back',  payload: 'MENU_TOOLS' },
+  { type: 'postback', title: '📋 List', payload: 'HELP_SMS' },
+];
+
+const AM_BUTTONS = [
+  { type: 'postback', title: '◀ Back',  payload: 'MENU_TOOLS' },
+  { type: 'postback', title: 'ℹ️ Help', payload: 'HELP_AM' },
 ];
 
 const UA_LIST = [
@@ -122,18 +134,7 @@ async function reply(env, psid, text) {
       body: JSON.stringify(body),
     });
     const txt = await r.text();
-    if (!r.ok) {
-      try {
-        const j = JSON.parse(txt);
-        const code = j.error && j.error.code;
-        const sub  = j.error && j.error.error_subcode;
-        if (code === 10 || sub === 1893063) {
-          console.error('PAGE RESTRICTED — SKIP');
-          return { ok: false, status: r.status, body: 'restricted' };
-        }
-      } catch (e) {}
-      console.error('FB reply failed', r.status, txt);
-    }
+    if (!r.ok) console.error('FB reply failed', r.status, txt);
     return { ok: r.ok, status: r.status, body: txt };
   } catch (e) {
     console.error('FB reply exception', String(e));
@@ -141,8 +142,6 @@ async function reply(env, psid, text) {
   }
 }
 
-/* Every bot response uses this function.
-   Header image = GIF_HEADER. Falls back to text if the card fails. */
 async function sendGifCard(env, psid, title, message, buttons) {
   const safeButtons = (buttons || []).slice(0, 3).map(b => {
     if (!b || !b.title) return null;
@@ -150,12 +149,7 @@ async function sendGifCard(env, psid, title, message, buttons) {
       return { type: 'postback', title: String(b.title).slice(0, 20), payload: String(b.payload) };
     }
     if (b.type === 'web_url' && b.url) {
-      return {
-        type: 'web_url',
-        title: String(b.title).slice(0, 20),
-        url: String(b.url),
-        webview_height_ratio: b.webview_height_ratio || 'full',
-      };
+      return { type: 'web_url', title: String(b.title).slice(0, 20), url: String(b.url), webview_height_ratio: b.webview_height_ratio || 'full' };
     }
     return null;
   }).filter(Boolean);
@@ -170,10 +164,7 @@ async function sendGifCard(env, psid, title, message, buttons) {
   const payload = {
     attachment: {
       type: 'template',
-      payload: {
-        template_type: 'generic',
-        elements: [element],
-      },
+      payload: { template_type: 'generic', elements: [element] },
     },
   };
 
@@ -547,35 +538,62 @@ async function handleCommand(env, psid, rawText) {
   const lower = text.toLowerCase();
   if (!text) return;
 
-  /* ── Menu card — this replaces the old "gif" trigger ── */
+  /* ── Menu triggers ── */
   if (lower === 'menu' || lower === 'start' || lower === 'help' || lower === '?' || text === '.') {
     return sendGifCard(env, psid, CARD_TITLE,
-      'Welcome to Monitorv1. Choose an option below.',
+      'Choose a category to view commands.',
       HOME_BUTTONS);
   }
 
-  /* ── Postback buttons ── */
-  if (lower === 'monitor') {
-    return sendGifCard(env, psid, '📊 Monitor',
-      'Monitor option selected. Real-time status below.',
-      [
-        { type: 'postback', title: '⬅️ Back',    payload: 'HOME' },
-        { type: 'postback', title: '🔄 Refresh', payload: 'MONITOR' },
-      ]);
+  /* ── Home sub-menus ── */
+  if (lower === 'menu_tools' || lower === 'tools') {
+    return sendGifCard(env, psid, '🛠️ Tools',
+      'Pick a tool to see its commands.',
+      TOOLS_BUTTONS);
   }
 
-  if (lower === 'info') {
-    return sendGifCard(env, psid, 'ℹ️ Information',
-      'Monitorv1 — a lightweight status and monitoring bot.',
-      [
-        { type: 'postback', title: '⬅️ Back',   payload: 'HOME' },
-        { type: 'web_url',  title: '🔗 GitHub', url: GITHUB_URL, webview_height_ratio: 'full' },
-      ]);
+  if (lower === 'menu_status' || lower === 'status') {
+    let pageName = 'unknown', pageId = 'unknown';
+    try {
+      const r = await fetch(`${GRAPH}/me?access_token=${env.PAGE_TOKEN}`);
+      const j = await r.json();
+      pageName = j.name || 'unknown';
+      pageId = j.id || 'unknown';
+    } catch (e) {}
+    return sendGifCard(env, psid, '📊 Status',
+      `ver ${VERSION} · ${pageName} · id ${pageId}`.slice(0, 80),
+      [{ type: 'postback', title: '◀ Back', payload: 'MENU_MAIN' }]);
   }
 
-  if (lower === 'home') {
+  if (lower === 'menu_help') {
+    return sendGifCard(env, psid, 'ℹ️ Help',
+      'Tap Tools for commands. Type any command directly to use it.',
+      [{ type: 'postback', title: '◀ Back', payload: 'MENU_MAIN' }]);
+  }
+
+  /* ── Tools sub-menu ── */
+  if (lower === 'menu_ngl' || lower === 'help_ngl') {
+    return sendGifCard(env, psid, '📨 NGL Commands',
+      'Type in chat:\n  test <user>\n  spam <user> <count> <msg>',
+      NGL_BUTTONS);
+  }
+
+  if (lower === 'menu_sms' || lower === 'help_sms') {
+    const list = SMS_NAMES.slice(0, 6).map((n, i) => `${i+1}. ${n}`).join('\n');
+    return sendGifCard(env, psid, '📱 SMS Commands',
+      `Type:\n  sms <phone> [rounds]\n  smssvc <phone> 1,2,3\n\nTop: ${SMS_NAMES[0]}, ${SMS_NAMES[1]}`,
+      SMS_BUTTONS);
+  }
+
+  if (lower === 'menu_am' || lower === 'help_am') {
+    return sendGifCard(env, psid, '🎬 Alight Motion',
+      'Type:\n  am <email>\n  amverify <email> <link>',
+      AM_BUTTONS);
+  }
+
+  if (lower === 'menu_main' || lower === 'home') {
     return sendGifCard(env, psid, CARD_TITLE,
-      'Welcome to Monitorv1. Choose an option below.',
+      'Choose a category to view commands.',
       HOME_BUTTONS);
   }
 
@@ -584,16 +602,9 @@ async function handleCommand(env, psid, rawText) {
   }
 
   if (text === '..') {
-    let pageName = 'unknown', pageId = 'unknown';
-    try {
-      const r = await fetch(`${GRAPH}/me?access_token=${env.PAGE_TOKEN}`);
-      const j = await r.json();
-      pageName = j.name || 'unknown';
-      pageId = j.id || 'unknown';
-    } catch (e) {}
     return sendGifCard(env, psid, 'DEEP STATUS',
-      `ver ${VERSION} · ${pageName} · id ${pageId}`.slice(0, 80),
-      [{ type: 'postback', title: '⬅️ Back', payload: 'HOME' }]);
+      `ver ${VERSION} · all relays active`.slice(0, 80),
+      [{ type: 'postback', title: '◀ Back', payload: 'MENU_MAIN' }]);
   }
 
   /* ── Plain URL ── */
@@ -602,7 +613,7 @@ async function handleCommand(env, psid, rawText) {
       text.slice(0, 70),
       [
         { type: 'web_url',  title: 'Open Link', url: text, webview_height_ratio: 'full' },
-        { type: 'postback', title: '⬅️ Back',   payload: 'HOME' },
+        { type: 'postback', title: '◀ Back',    payload: 'MENU_MAIN' },
       ]);
   }
 
@@ -617,12 +628,12 @@ async function handleCommand(env, psid, rawText) {
         r.direct.slice(0, 70),
         [
           { type: 'web_url',  title: 'Open Direct', url: r.direct, webview_height_ratio: 'full' },
-          { type: 'postback', title: '⬅️ Back',     payload: 'HOME' },
+          { type: 'postback', title: '◀ Back',      payload: 'MENU_MAIN' },
         ]);
     }
     return sendGifCard(env, psid, '🔗 Bypass Failed',
       (r.error || 'unknown error').slice(0, 70),
-      [{ type: 'postback', title: '⬅️ Back', payload: 'HOME' }]);
+      [{ type: 'postback', title: '◀ Back', payload: 'MENU_MAIN' }]);
   }
 
   /* ── NGL test ── */
@@ -724,12 +735,34 @@ export default {
         return new Response(null, { status: 204, headers: { ...CORS, 'X-Worker-Version': VERSION } });
       }
 
+      /* ── GIF HEADER ──
+         Serves the GIF with correct Content-Type so Meta accepts it. */
+      if (url.pathname === '/header.gif') {
+        try {
+          const up = await fetch(GIF_SOURCE, { redirect: 'follow' });
+          if (!up.ok) {
+            return new Response('upstream failed', { status: 502 });
+          }
+          const buf = await up.arrayBuffer();
+          return new Response(buf, {
+            status: 200,
+            headers: {
+              'Content-Type': 'image/gif',
+              'Cache-Control': 'public, max-age=86400',
+              'Access-Control-Allow-Origin': '*',
+            },
+          });
+        } catch (e) {
+          return new Response('gif fetch error: ' + String(e), { status: 500 });
+        }
+      }
+
       if (url.pathname === '/privacy') {
         return new Response(
 `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Privacy Policy</title></head>
 <body style="font-family:system-ui;max-width:720px;margin:40px auto;padding:0 20px;line-height:1.6">
 <h1>Privacy Policy</h1>
-<p>No personal data is collected or stored. Messages are processed in real time and are not retained.</p>
+<p>No personal data is collected or stored. Messages are processed in real time.</p>
 </body></html>`,
           { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
       }

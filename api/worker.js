@@ -1,14 +1,13 @@
 /* ============================================================================
-   D3S BOT — v2.6
-   NGL · SMS · AM · Bypass · Messenger Card Menu
-   Two-level home menu · GIF header served via Worker
+   D3S BOT — v2.8
+   GIF header + quick reply menu
+   No generic-template cards, no postback buttons.
+   /privacy and /webhook preserved.
    ============================================================================ */
 
-/* ============================================================================
-   §1  CONFIG
-   ============================================================================ */
+/* ------------------------------------------------------------------ CONFIG */
 
-const VERSION = 'bot-v2.6';
+const VERSION = 'bot-v2.8';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -22,54 +21,17 @@ const VERCEL_SMS    = 'https://sms-jsiej.vercel.app/api/sms';
 const VERCEL_AM     = 'https://am-premium-eight.vercel.app/api/am';
 const BYPASS_PROXY  = 'https://bypass-proxy.marcelochristann.workers.dev';
 
-/* GIF header served by this same Worker at /header.gif.
-   Meta fetches this and gets Content-Type: image/gif. */
-const GIF_HEADER  = 'https://dawn-sea-fdaa.marcelochristann.workers.dev/header.gif';
-const GIF_SOURCE  = 'https://github.com/Darknessking09/Monitorv1/raw/refs/heads/main/open-sora-ezgif.com-gif-maker.gif';
-const GITHUB_URL  = 'https://github.com/Darknessking09/Monitorv1';
-const CARD_TITLE  = 'D3S BOT';
+/* GIF header — the exact template URL */
+const GIF_URL = 'https://i.imgur.com/PadgzEK.gif';
+const SEND_GAP_MS = 1200;
 
-/* Level 1 home menu */
-const HOME_BUTTONS = [
-  { type: 'postback', title: '🛠️ Tools',  payload: 'MENU_TOOLS' },
-  { type: 'postback', title: '📊 Status', payload: 'MENU_STATUS' },
-  { type: 'postback', title: 'ℹ️ Help',   payload: 'MENU_HELP' },
-];
-
-/* Level 2 tools menu */
-const TOOLS_BUTTONS = [
-  { type: 'postback', title: '📨 NGL',  payload: 'MENU_NGL' },
-  { type: 'postback', title: '📱 SMS',  payload: 'MENU_SMS' },
-  { type: 'postback', title: '🎬 AM',   payload: 'MENU_AM' },
-];
-
-const NGL_BUTTONS = [
-  { type: 'postback', title: '◀ Back', payload: 'MENU_TOOLS' },
-  { type: 'postback', title: 'ℹ️ Help', payload: 'HELP_NGL' },
-];
-
-const SMS_BUTTONS = [
-  { type: 'postback', title: '◀ Back',  payload: 'MENU_TOOLS' },
-  { type: 'postback', title: '📋 List', payload: 'HELP_SMS' },
-];
-
-const AM_BUTTONS = [
-  { type: 'postback', title: '◀ Back',  payload: 'MENU_TOOLS' },
-  { type: 'postback', title: 'ℹ️ Help', payload: 'HELP_AM' },
-];
+/* -------------------------------------------------------------- UTILITIES */
 
 const UA_LIST = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
-  'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
 ];
-
-
-/* ============================================================================
-   §2  UTILITIES
-   ============================================================================ */
 
 const pickUA = () => UA_LIST[Math.floor(Math.random() * UA_LIST.length)];
 
@@ -79,8 +41,8 @@ const uuid = () =>
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
   });
 
-const randHex = (n) => { let s = ''; while (s.length < n) s += Math.floor(Math.random() * 16).toString(16); return s.slice(0, n); };
-const randAlpha = (n) => { const c = 'abcdefghijklmnopqrstuvwxyz0123456789'; let r = ''; for (let i = 0; i < n; i++) r += c[Math.floor(Math.random() * c.length)]; return r; };
+const randHex    = (n) => { let s = ''; while (s.length < n) s += Math.floor(Math.random() * 16).toString(16); return s.slice(0, n); };
+const randAlpha  = (n) => { const c = 'abcdefghijklmnopqrstuvwxyz0123456789'; let r = ''; for (let i = 0; i < n; i++) r += c[Math.floor(Math.random() * c.length)]; return r; };
 const randGmail  = () => randAlpha(8) + '@gmail.com';
 const randUid    = () => randAlpha(28);
 const randDevice = () => randAlpha(16);
@@ -115,66 +77,16 @@ async function post(url, headers, body, timeoutMs = 8000) {
   }
 }
 
+/* ---------------------------------------------------------- MESSENGER SEND */
 
-/* ============================================================================
-   §3  CARD SYSTEM
-   ============================================================================ */
-
-async function reply(env, psid, text) {
+/* Base send — one message payload */
+async function sendMessage(env, psid, message) {
   const url = `${GRAPH}/me/messages?access_token=${env.PAGE_TOKEN}`;
   const body = {
     recipient: { id: psid },
     messaging_type: 'RESPONSE',
-    message: { text: String(text).slice(0, 1900) },
+    message,
   };
-  try {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const txt = await r.text();
-    if (!r.ok) console.error('FB reply failed', r.status, txt);
-    return { ok: r.ok, status: r.status, body: txt };
-  } catch (e) {
-    console.error('FB reply exception', String(e));
-    return { ok: false, status: 0, body: String(e) };
-  }
-}
-
-async function sendGifCard(env, psid, title, message, buttons) {
-  const safeButtons = (buttons || []).slice(0, 3).map(b => {
-    if (!b || !b.title) return null;
-    if (b.type === 'postback' && b.payload) {
-      return { type: 'postback', title: String(b.title).slice(0, 20), payload: String(b.payload) };
-    }
-    if (b.type === 'web_url' && b.url) {
-      return { type: 'web_url', title: String(b.title).slice(0, 20), url: String(b.url), webview_height_ratio: b.webview_height_ratio || 'full' };
-    }
-    return null;
-  }).filter(Boolean);
-
-  const element = {
-    title: String(title || CARD_TITLE).slice(0, 80),
-    subtitle: String(message || '').slice(0, 80),
-  };
-  if (GIF_HEADER) element.image_url = GIF_HEADER;
-  if (safeButtons.length) element.buttons = safeButtons;
-
-  const payload = {
-    attachment: {
-      type: 'template',
-      payload: { template_type: 'generic', elements: [element] },
-    },
-  };
-
-  const url = `${GRAPH}/me/messages?access_token=${env.PAGE_TOKEN}`;
-  const body = {
-    recipient: { id: psid },
-    messaging_type: 'RESPONSE',
-    message: payload,
-  };
-
   try {
     const r = await fetch(url, {
       method: 'POST',
@@ -183,20 +95,69 @@ async function sendGifCard(env, psid, title, message, buttons) {
     });
     const txt = await r.text();
     if (!r.ok) {
-      console.error('sendGifCard failed', r.status, txt);
-      return reply(env, psid, `${title}\n${message}`);
+      try {
+        const j = JSON.parse(txt);
+        const code = j.error && j.error.code;
+        const sub  = j.error && j.error.error_subcode;
+        if (code === 10 || sub === 1893063) {
+          console.error('PAGE RESTRICTED — SKIP');
+          return { ok: false, status: r.status, body: 'restricted' };
+        }
+      } catch (e) {}
+      console.error('sendMessage failed', r.status, txt);
     }
-    return { ok: true, status: r.status, body: txt };
+    return { ok: r.ok, status: r.status, body: txt };
   } catch (e) {
-    console.error('sendGifCard exception', String(e));
-    return reply(env, psid, `${title}\n${message}`);
+    console.error('sendMessage exception', String(e));
+    return { ok: false, status: 0, body: String(e) };
   }
 }
 
+/* Send GIF first, then the text message with quick replies */
+async function sendGifHeader(env, psid) {
+  // 1) GIF only — no buttons on the image
+  await sendMessage(env, psid, {
+    attachment: {
+      type: 'image',
+      payload: {
+        url: GIF_URL,
+        is_reusable: true,
+      },
+    },
+  });
 
-/* ============================================================================
-   §4  NGL ENGINE
-   ============================================================================ */
+  // 2) gap to avoid burst mute
+  await sleep(SEND_GAP_MS);
+
+  // 3) text with quick replies — this is where the buttons live now
+  await sendMessage(env, psid, {
+    text: 'Welcome! Choose an option below.',
+    quick_replies: [
+      { content_type: 'text', title: '📊 Menu', payload: 'MENU' },
+      { content_type: 'text', title: 'ℹ️ Info', payload: 'INFO' },
+    ],
+  });
+}
+
+/* Send GIF, then a custom text body (no quick replies).
+   Used after commands to keep the header consistent. */
+async function sendGifAndText(env, psid, text) {
+  await sendMessage(env, psid, {
+    attachment: {
+      type: 'image',
+      payload: { url: GIF_URL, is_reusable: true },
+    },
+  });
+  await sleep(SEND_GAP_MS);
+  await sendMessage(env, psid, { text: String(text).slice(0, 1900) });
+}
+
+/* Plain text — used for command output that does not need the header */
+async function replyText(env, psid, text) {
+  return sendMessage(env, psid, { text: String(text).slice(0, 1900) });
+}
+
+/* -------------------------------------------------------------- NGL ENGINE */
 
 async function nglCloudflare(username, message) {
   const nonce = Date.now() + '-' + Math.floor(Math.random() * 1e9);
@@ -258,10 +219,7 @@ async function nglBatch(username, count, message) {
   return stats;
 }
 
-
-/* ============================================================================
-   §5  SMS ENGINE
-   ============================================================================ */
+/* -------------------------------------------------------------- SMS ENGINE */
 
 async function svcCustom(phone, sender, msg) {
   const norm = normPhone(phone);
@@ -477,10 +435,7 @@ async function smsBatch(phone, services, rounds, sender, msg) {
   return cf;
 }
 
-
-/* ============================================================================
-   §6  AM + BYPASS
-   ============================================================================ */
+/* -------------------------------------------------------------- AM + BYPASS */
 
 async function amSendMagicLink(email) {
   try {
@@ -528,31 +483,53 @@ async function bypassUrl(url) {
   }
 }
 
+/* -------------------------------------------------------------- COMMANDS */
 
-/* ============================================================================
-   §7  COMMAND HANDLER
-   ============================================================================ */
+const COMMANDS_TEXT =
+`D3S BOT v2.8
+
+NGL
+  test <user>
+  spam <user> <count> <msg>
+
+SMS
+  sms <phone> [count]
+  smssvc <phone> 1,2,3
+  smshelp
+
+AM
+  am <email>
+  amverify <email> <link>
+
+BYPASS
+  bypass <url>
+
+MISC
+  menu
+  info
+  ping
+  ..`;
 
 async function handleCommand(env, psid, rawText) {
   const text = (rawText || '').trim();
   const lower = text.toLowerCase();
   if (!text) return;
 
-  /* ── Menu triggers ── */
-  if (lower === 'menu' || lower === 'start' || lower === 'help' || lower === '?' || text === '.') {
-    return sendGifCard(env, psid, CARD_TITLE,
-      'Choose a category to view commands.',
-      HOME_BUTTONS);
+  /* MENU — GIF + welcome text with quick replies */
+  if (lower === 'menu' || lower === 'start' || lower === '?' || text === '.') {
+    return sendGifHeader(env, psid);
   }
 
-  /* ── Home sub-menus ── */
-  if (lower === 'menu_tools' || lower === 'tools') {
-    return sendGifCard(env, psid, '🛠️ Tools',
-      'Pick a tool to see its commands.',
-      TOOLS_BUTTONS);
+  /* INFO — GIF + commands list */
+  if (lower === 'info' || lower === 'help') {
+    return sendGifAndText(env, psid, COMMANDS_TEXT);
   }
 
-  if (lower === 'menu_status' || lower === 'status') {
+  if (lower === 'ping') {
+    return replyText(env, psid, 'PONG ' + new Date().toISOString());
+  }
+
+  if (text === '..') {
     let pageName = 'unknown', pageId = 'unknown';
     try {
       const r = await fetch(`${GRAPH}/me?access_token=${env.PAGE_TOKEN}`);
@@ -560,171 +537,121 @@ async function handleCommand(env, psid, rawText) {
       pageName = j.name || 'unknown';
       pageId = j.id || 'unknown';
     } catch (e) {}
-    return sendGifCard(env, psid, '📊 Status',
-      `ver ${VERSION} · ${pageName} · id ${pageId}`.slice(0, 80),
-      [{ type: 'postback', title: '◀ Back', payload: 'MENU_MAIN' }]);
+    return replyText(env, psid, `DEEP STATUS\n  ver ${VERSION}\n  page ${pageName}\n  id ${pageId}`);
   }
 
-  if (lower === 'menu_help') {
-    return sendGifCard(env, psid, 'ℹ️ Help',
-      'Tap Tools for commands. Type any command directly to use it.',
-      [{ type: 'postback', title: '◀ Back', payload: 'MENU_MAIN' }]);
-  }
-
-  /* ── Tools sub-menu ── */
-  if (lower === 'menu_ngl' || lower === 'help_ngl') {
-    return sendGifCard(env, psid, '📨 NGL Commands',
-      'Type in chat:\n  test <user>\n  spam <user> <count> <msg>',
-      NGL_BUTTONS);
-  }
-
-  if (lower === 'menu_sms' || lower === 'help_sms') {
-    const list = SMS_NAMES.slice(0, 6).map((n, i) => `${i+1}. ${n}`).join('\n');
-    return sendGifCard(env, psid, '📱 SMS Commands',
-      `Type:\n  sms <phone> [rounds]\n  smssvc <phone> 1,2,3\n\nTop: ${SMS_NAMES[0]}, ${SMS_NAMES[1]}`,
-      SMS_BUTTONS);
-  }
-
-  if (lower === 'menu_am' || lower === 'help_am') {
-    return sendGifCard(env, psid, '🎬 Alight Motion',
-      'Type:\n  am <email>\n  amverify <email> <link>',
-      AM_BUTTONS);
-  }
-
-  if (lower === 'menu_main' || lower === 'home') {
-    return sendGifCard(env, psid, CARD_TITLE,
-      'Choose a category to view commands.',
-      HOME_BUTTONS);
-  }
-
-  if (lower === 'ping') {
-    return reply(env, psid, 'PONG ' + new Date().toISOString());
-  }
-
-  if (text === '..') {
-    return sendGifCard(env, psid, 'DEEP STATUS',
-      `ver ${VERSION} · all relays active`.slice(0, 80),
-      [{ type: 'postback', title: '◀ Back', payload: 'MENU_MAIN' }]);
-  }
-
-  /* ── Plain URL ── */
+  /* Plain URL — echo with header */
   if (/^https?:\/\//i.test(text)) {
-    return sendGifCard(env, psid, '🔗 Link Received',
-      text.slice(0, 70),
-      [
-        { type: 'web_url',  title: 'Open Link', url: text, webview_height_ratio: 'full' },
-        { type: 'postback', title: '◀ Back',    payload: 'MENU_MAIN' },
-      ]);
+    return sendGifAndText(env, psid, 'Link received:\n' + text);
   }
 
-  /* ── Bypass ── */
+  /* Bypass */
   if (lower.startsWith('bypass ')) {
     const url = text.slice(7).trim();
-    if (!url) return reply(env, psid, 'USAGE: bypass <url>');
-    await reply(env, psid, 'BYPASS REQUEST\n  ' + url.slice(0, 60) + (url.length > 60 ? '...' : ''));
+    if (!url) return replyText(env, psid, 'USAGE: bypass <url>');
+    await replyText(env, psid, 'BYPASS REQUEST\n  ' + url.slice(0, 70));
     const r = await bypassUrl(url);
     if (r.ok && r.direct) {
-      return sendGifCard(env, psid, '🔗 Bypass Done',
-        r.direct.slice(0, 70),
-        [
-          { type: 'web_url',  title: 'Open Direct', url: r.direct, webview_height_ratio: 'full' },
-          { type: 'postback', title: '◀ Back',      payload: 'MENU_MAIN' },
-        ]);
+      return sendGifAndText(env, psid, 'BYPASS DONE\n  ' + r.direct);
     }
-    return sendGifCard(env, psid, '🔗 Bypass Failed',
-      (r.error || 'unknown error').slice(0, 70),
-      [{ type: 'postback', title: '◀ Back', payload: 'MENU_MAIN' }]);
+    return sendGifAndText(env, psid, 'BYPASS FAILED\n  ' + (r.error || 'unknown error'));
   }
 
-  /* ── NGL test ── */
+  /* NGL */
   if (lower.startsWith('test ')) {
     const user = text.split(/\s+/)[1];
-    if (!user) return reply(env, psid, 'USAGE: test <user>');
-    await reply(env, psid, 'TESTING NGL: ' + user);
+    if (!user) return replyText(env, psid, 'USAGE: test <user>');
+    await replyText(env, psid, 'TESTING NGL: ' + user);
     const r = await nglSend(user, 'bot-preflight');
-    if (r.status === 200) return reply(env, psid, 'NGL VALID\n  target ' + user + '\n  relay  ' + r.via);
-    if (r.status === 404) return reply(env, psid, 'NGL NOT FOUND\n  target ' + user);
-    return reply(env, psid, 'NGL HTTP ' + r.status);
+    if (r.status === 200) return sendGifAndText(env, psid, 'NGL VALID\n  target ' + user + '\n  relay  ' + r.via);
+    if (r.status === 404) return sendGifAndText(env, psid, 'NGL NOT FOUND\n  target ' + user);
+    return sendGifAndText(env, psid, 'NGL HTTP ' + r.status);
   }
 
-  /* ── NGL spam ── */
   if (lower.startsWith('spam ')) {
     const parts = text.split(/\s+/);
-    if (parts.length < 4) return reply(env, psid, 'USAGE: spam <user> <count> <msg>');
+    if (parts.length < 4) return replyText(env, psid, 'USAGE: spam <user> <count> <msg>');
     const user = parts[1];
     const count = parseInt(parts[2], 10);
     const message = parts.slice(3).join(' ');
-    if (!count || count < 1 || count > 50) return reply(env, psid, 'ERROR: count 1-50');
-    await reply(env, psid, 'NGL BATCH START\n  target ' + user + '\n  count  ' + count);
+    if (!count || count < 1 || count > 50) return replyText(env, psid, 'ERROR: count 1-50');
+    await replyText(env, psid, 'NGL BATCH START\n  target ' + user + '\n  count  ' + count);
     const stats = await nglBatch(user, count, message);
-    return reply(env, psid,
+    return sendGifAndText(env, psid,
       'NGL DONE\n  sent    ' + stats.sent + '  (cf ' + stats.via_cf + ' / vc ' + stats.via_vc + ')\n' +
       '  404     ' + stats.fof + '\n  errors  ' + stats.err + '\n  elapsed ' + stats.elapsed + 's');
   }
 
-  /* ── SMS ── */
+  /* SMS */
+  if (lower === 'smshelp') {
+    let out = 'SMS SERVICES (' + SMS_NAMES.length + ')\n';
+    SMS_NAMES.forEach((n, i) => { out += '  ' + String(i + 1).padStart(2, ' ') + '. ' + n + '\n'; });
+    out += '\nUSAGE\n  sms <phone> <count>\n  smssvc <phone> 1,3,8';
+    return sendGifAndText(env, psid, out);
+  }
+
   if (lower.startsWith('smssvc ')) {
     const parts = text.split(/\s+/);
-    if (parts.length < 3) return reply(env, psid, 'USAGE: smssvc <phone> <1,2,3>');
+    if (parts.length < 3) return replyText(env, psid, 'USAGE: smssvc <phone> <1,2,3>');
     const phone = parts[1];
     const idx = parts[2].split(',').map(s => parseInt(s.trim(), 10)).filter(n => n >= 1 && n <= SMS_NAMES.length);
-    if (!idx.length) return reply(env, psid, 'ERROR: bad service numbers');
+    if (!idx.length) return replyText(env, psid, 'ERROR: bad service numbers');
     const services = idx.map(i => SMS_NAMES[i - 1]);
-    await reply(env, psid, 'SMS SELECTED\n  svc ' + services.join(', '));
+    await replyText(env, psid, 'SMS SELECTED\n  svc ' + services.join(', '));
     const stats = await smsBatch(phone, services, 1, 'User', 'Test');
-    return reply(env, psid, 'SMS DONE\n  sent  ' + stats.ok + '  (' + (stats.via || 'cf') + ')\n  fail  ' + stats.fail);
+    return sendGifAndText(env, psid, 'SMS DONE\n  sent  ' + stats.ok + '  (' + (stats.via || 'cf') + ')\n  fail  ' + stats.fail);
   }
 
   if (lower.startsWith('sms ')) {
     const parts = text.split(/\s+/);
-    if (parts.length < 2) return reply(env, psid, 'USAGE: sms <phone> [count]');
+    if (parts.length < 2) return replyText(env, psid, 'USAGE: sms <phone> [count]');
     const phone = parts[1];
     const rounds = parts[2] ? Math.max(1, Math.min(20, parseInt(parts[2], 10) || 1)) : 1;
     const norm = normPhone(phone);
-    if (!/^\+\d{10,15}$/.test(norm)) return reply(env, psid, 'ERROR: invalid phone');
-    await reply(env, psid, 'SMS BATCH START\n  phone ' + phone + '\n  rounds ' + rounds);
+    if (!/^\+\d{10,15}$/.test(norm)) return replyText(env, psid, 'ERROR: invalid phone');
+    await replyText(env, psid, 'SMS BATCH START\n  phone ' + phone + '\n  rounds ' + rounds);
     const stats = await smsBatch(phone, SMS_NAMES, rounds, 'User', 'Test');
-    return reply(env, psid, 'SMS DONE\n  rounds ' + stats.rounds + '\n  sent  ' + stats.ok + '  (' + (stats.via || 'cf') + ')\n  fail  ' + stats.fail);
+    return sendGifAndText(env, psid, 'SMS DONE\n  rounds ' + stats.rounds + '\n  sent  ' + stats.ok + '  (' + (stats.via || 'cf') + ')\n  fail  ' + stats.fail);
   }
 
-  /* ── AM ── */
+  /* AM */
+  if (lower === 'amhelp') {
+    return sendGifAndText(env, psid,
+      'ALIGHT MOTION FLOW\n\nSTEP 1\n  am <email>\n  -> magic link sent\n\nSTEP 2\n  open email, copy link\n\nSTEP 3\n  amverify <email> <link>');
+  }
+
   if (lower.startsWith('amverify ')) {
     const parts = text.split(/\s+/);
-    if (parts.length < 3) return reply(env, psid, 'USAGE: amverify <email> <link>');
+    if (parts.length < 3) return replyText(env, psid, 'USAGE: amverify <email> <link>');
     const email = parts[1];
     const rawLink = parts.slice(2).join(' ');
-    await reply(env, psid, 'AM VERIFY\n  email ' + email);
+    await replyText(env, psid, 'AM VERIFY\n  email ' + email);
     const v = await amVerify(email, rawLink);
-    if (!v.idToken) return reply(env, psid, 'AM VERIFY FAILED\n  ' + JSON.stringify(v.upstream).slice(0, 200));
-    await reply(env, psid, 'VERIFIED. activating premium...');
+    if (!v.idToken) return sendGifAndText(env, psid, 'AM VERIFY FAILED\n  ' + JSON.stringify(v.upstream).slice(0, 200));
+    await replyText(env, psid, 'VERIFIED. activating premium...');
     const a = await amApply(email, v.idToken);
     if (a.upstream && a.upstream.success) {
-      return reply(env, psid, 'AM PREMIUM ACTIVE\n  email ' + email + '\n  status ACTIVE');
+      return sendGifAndText(env, psid, 'AM PREMIUM ACTIVE\n  email ' + email + '\n  status ACTIVE');
     }
-    return reply(env, psid, 'AM PREMIUM FAILED\n  ' + JSON.stringify(a.upstream).slice(0, 200));
+    return sendGifAndText(env, psid, 'AM PREMIUM FAILED\n  ' + JSON.stringify(a.upstream).slice(0, 200));
   }
 
   if (lower.startsWith('am ')) {
     const email = text.split(/\s+/)[1];
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply(env, psid, 'USAGE: am <email>');
-    await reply(env, psid, 'AM SEND LINK\n  email ' + email);
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return replyText(env, psid, 'USAGE: am <email>');
+    await replyText(env, psid, 'AM SEND LINK\n  email ' + email);
     const r = await amSendMagicLink(email);
     if (r.upstream && r.upstream.success) {
-      return reply(env, psid, 'AM LINK SENT\n  email ' + email + '\n  check inbox/spam\n\nNEXT: amverify ' + email + ' <link>');
+      return sendGifAndText(env, psid, 'AM LINK SENT\n  email ' + email + '\n  check inbox/spam\n\nNEXT: amverify ' + email + ' <link>');
     }
-    return reply(env, psid, 'AM FAILED\n  ' + JSON.stringify(r.upstream).slice(0, 200));
+    return sendGifAndText(env, psid, 'AM FAILED\n  ' + JSON.stringify(r.upstream).slice(0, 200));
   }
 
-  /* ── Unknown ── */
-  return sendGifCard(env, psid, 'Unknown Command',
-    'Send "menu" to see options.',
-    HOME_BUTTONS);
+  /* Unknown */
+  return sendGifAndText(env, psid, 'Unknown command. Send "menu".\n\n' + COMMANDS_TEXT);
 }
 
-
-/* ============================================================================
-   §8  HTTP ROUTER
-   ============================================================================ */
+/* -------------------------------------------------------------- HTTP ROUTER */
 
 export default {
   async fetch(request, env, ctx) {
@@ -735,38 +662,18 @@ export default {
         return new Response(null, { status: 204, headers: { ...CORS, 'X-Worker-Version': VERSION } });
       }
 
-      /* ── GIF HEADER ──
-         Serves the GIF with correct Content-Type so Meta accepts it. */
-      if (url.pathname === '/header.gif') {
-        try {
-          const up = await fetch(GIF_SOURCE, { redirect: 'follow' });
-          if (!up.ok) {
-            return new Response('upstream failed', { status: 502 });
-          }
-          const buf = await up.arrayBuffer();
-          return new Response(buf, {
-            status: 200,
-            headers: {
-              'Content-Type': 'image/gif',
-              'Cache-Control': 'public, max-age=86400',
-              'Access-Control-Allow-Origin': '*',
-            },
-          });
-        } catch (e) {
-          return new Response('gif fetch error: ' + String(e), { status: 500 });
-        }
-      }
-
+      /* -------- PRIVACY (preserved) -------- */
       if (url.pathname === '/privacy') {
         return new Response(
 `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Privacy Policy</title></head>
 <body style="font-family:system-ui;max-width:720px;margin:40px auto;padding:0 20px;line-height:1.6">
 <h1>Privacy Policy</h1>
-<p>No personal data is collected or stored. Messages are processed in real time.</p>
+<p>No personal data is collected or stored. Messages are processed in real time and are not retained.</p>
 </body></html>`,
           { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
       }
 
+      /* -------- WEBHOOK VERIFY (preserved) -------- */
       if (url.pathname === '/webhook' && request.method === 'GET') {
         const mode      = url.searchParams.get('hub.mode');
         const token     = url.searchParams.get('hub.verify_token');
@@ -777,6 +684,7 @@ export default {
         return new Response('Forbidden', { status: 403 });
       }
 
+      /* -------- WEBHOOK EVENTS (preserved) -------- */
       if (url.pathname === '/webhook' && request.method === 'POST') {
         const raw = await request.text();
         let data;
@@ -787,15 +695,14 @@ export default {
           for (const m of (entry.messaging || [])) {
             const psid = m.sender && m.sender.id;
             if (!psid) continue;
-            const text     = (m.message && m.message.text) || '';
-            const postback = (m.postback && m.postback.payload) || '';
-            const cmd = text || postback;
-            if (cmd) ctx.waitUntil(handleCommand(env, psid, cmd));
+            const text = (m.message && m.message.text) || '';
+            if (text) ctx.waitUntil(handleCommand(env, psid, text));
           }
         }
         return new Response('EVENT_RECEIVED', { status: 200 });
       }
 
+      /* -------- DIAG -------- */
       if (url.pathname === '/api' && request.method === 'GET' && url.searchParams.get('diag') === '1') {
         let me = null, meErr = null;
         try {
@@ -804,28 +711,14 @@ export default {
         } catch (e) { meErr = String(e); }
         return json({
           ok: true, version: VERSION,
-          colo: request.cf ? request.cf.colo : '?',
-          country: request.cf ? request.cf.country : '?',
           has_verify_token: !!env.VERIFY_TOKEN,
           has_page_token: !!env.PAGE_TOKEN,
-          has_app_secret: !!env.APP_SECRET,
-          ngl_relay: VERCEL_RELAY,
-          sms_relay: VERCEL_SMS,
-          am_relay: VERCEL_AM,
-          bypass_proxy: BYPASS_PROXY,
-          gif_header: GIF_HEADER,
-          sms_services: SMS_NAMES.length,
+          gif_url: GIF_URL,
           page: me, page_error: meErr, ts: Date.now(),
         });
       }
 
-      if (url.pathname === '/test-send' && request.method === 'GET') {
-        const psid = url.searchParams.get('psid');
-        if (!psid) return json({ ok: false, msg: 'pass ?psid=...' }, 400);
-        const r = await reply(env, psid, 'Test ' + new Date().toISOString());
-        return json(r);
-      }
-
+      /* -------- NGL RELAY API -------- */
       if (url.pathname === '/api') {
         if (request.method !== 'POST') return json({ ok: false, msg: 'POST only' }, 405);
         let body = {};

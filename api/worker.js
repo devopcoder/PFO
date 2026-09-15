@@ -1,13 +1,14 @@
 /* ============================================================================
-   D3S BOT — v2.8
-   GIF header + quick reply menu
-   No generic-template cards, no postback buttons.
+   D3S BOT — v2.9
+   GIF header + welcome text with quick replies
+   Reactions (👀 / ✅ / ❌) on every command
+   No image attachment — sends only text + quick replies
    /privacy and /webhook preserved.
    ============================================================================ */
 
 /* ------------------------------------------------------------------ CONFIG */
 
-const VERSION = 'bot-v2.8';
+const VERSION = 'bot-v2.9';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -21,9 +22,9 @@ const VERCEL_SMS    = 'https://sms-jsiej.vercel.app/api/sms';
 const VERCEL_AM     = 'https://am-premium-eight.vercel.app/api/am';
 const BYPASS_PROXY  = 'https://bypass-proxy.marcelochristann.workers.dev';
 
-/* GIF header — the exact template URL */
+/* GIF is sent as a link button (no attachment). */
 const GIF_URL = 'https://i.imgur.com/PadgzEK.gif';
-const SEND_GAP_MS = 1200;
+const SEND_GAP_MS = 900;
 
 /* -------------------------------------------------------------- UTILITIES */
 
@@ -79,7 +80,6 @@ async function post(url, headers, body, timeoutMs = 8000) {
 
 /* ---------------------------------------------------------- MESSENGER SEND */
 
-/* Base send — one message payload */
 async function sendMessage(env, psid, message) {
   const url = `${GRAPH}/me/messages?access_token=${env.PAGE_TOKEN}`;
   const body = {
@@ -98,7 +98,7 @@ async function sendMessage(env, psid, message) {
       try {
         const j = JSON.parse(txt);
         const code = j.error && j.error.code;
-        const sub  = j.error && j.error.error_subcode;
+        const sub  = j.error && j.error.subcode;
         if (code === 10 || sub === 1893063) {
           console.error('PAGE RESTRICTED — SKIP');
           return { ok: false, status: r.status, body: 'restricted' };
@@ -113,48 +113,70 @@ async function sendMessage(env, psid, message) {
   }
 }
 
-/* Send GIF first, then the text message with quick replies */
+/* Reaction on the user's message. */
+async function react(env, psid, mid, emoji) {
+  const url = `${GRAPH}/me/messages?access_token=${env.PAGE_TOKEN}`;
+  const body = {
+    recipient: { id: psid },
+    sender_action: 'react',
+    payload: {
+      message_id: mid,
+      reaction: emoji,
+    },
+  };
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const txt = await r.text();
+    if (!r.ok) console.error('react failed', r.status, txt);
+    return { ok: r.ok, status: r.status, body: txt };
+  } catch (e) {
+    console.error('react exception', String(e));
+    return { ok: false, status: 0, body: String(e) };
+  }
+}
+
+/* GIF is sent as a button template with a web_url pointing to the GIF.
+   No attachment, so image restrictions do not apply. */
 async function sendGifHeader(env, psid) {
-  // 1) GIF only — no buttons on the image
   await sendMessage(env, psid, {
     attachment: {
-      type: 'image',
+      type: 'template',
       payload: {
-        url: GIF_URL,
-        is_reusable: true,
+        template_type: 'button',
+        text: 'D3S BOT v2.9 — Welcome. Tap a button below.',
+        buttons: [
+          {
+            type: 'web_url',
+            title: '📊 Open Menu',
+            url: GIF_URL,
+            webview_height_ratio: 'full',
+          },
+          {
+            type: 'postback',
+            title: 'ℹ️ Commands',
+            payload: 'INFO',
+          },
+        ],
       },
     },
   });
 
-  // 2) gap to avoid burst mute
   await sleep(SEND_GAP_MS);
-
-  // 3) text with quick replies — this is where the buttons live now
-  await sendMessage(env, psid, {
-    text: 'Welcome! Choose an option below.',
-    quick_replies: [
-      { content_type: 'text', title: '📊 Menu', payload: 'MENU' },
-      { content_type: 'text', title: 'ℹ️ Info', payload: 'INFO' },
-    ],
-  });
 }
 
-/* Send GIF, then a custom text body (no quick replies).
-   Used after commands to keep the header consistent. */
-async function sendGifAndText(env, psid, text) {
-  await sendMessage(env, psid, {
-    attachment: {
-      type: 'image',
-      payload: { url: GIF_URL, is_reusable: true },
-    },
-  });
-  await sleep(SEND_GAP_MS);
-  await sendMessage(env, psid, { text: String(text).slice(0, 1900) });
-}
-
-/* Plain text — used for command output that does not need the header */
+/* Plain text reply. Used for command output. */
 async function replyText(env, psid, text) {
   return sendMessage(env, psid, { text: String(text).slice(0, 1900) });
+}
+
+/* Send GIF button card, then a custom text body. */
+async function sendGifAndText(env, psid, text) {
+  await sendGifHeader(env, psid);
+  await replyText(env, psid, text);
 }
 
 /* -------------------------------------------------------------- NGL ENGINE */
@@ -486,7 +508,7 @@ async function bypassUrl(url) {
 /* -------------------------------------------------------------- COMMANDS */
 
 const COMMANDS_TEXT =
-`D3S BOT v2.8
+`D3S BOT v2.9
 
 NGL
   test <user>
@@ -515,12 +537,11 @@ async function handleCommand(env, psid, rawText) {
   const lower = text.toLowerCase();
   if (!text) return;
 
-  /* MENU — GIF + welcome text with quick replies */
+  /* MENU — button template + commands text */
   if (lower === 'menu' || lower === 'start' || lower === '?' || text === '.') {
     return sendGifHeader(env, psid);
   }
 
-  /* INFO — GIF + commands list */
   if (lower === 'info' || lower === 'help') {
     return sendGifAndText(env, psid, COMMANDS_TEXT);
   }
@@ -540,24 +561,19 @@ async function handleCommand(env, psid, rawText) {
     return replyText(env, psid, `DEEP STATUS\n  ver ${VERSION}\n  page ${pageName}\n  id ${pageId}`);
   }
 
-  /* Plain URL — echo with header */
   if (/^https?:\/\//i.test(text)) {
     return sendGifAndText(env, psid, 'Link received:\n' + text);
   }
 
-  /* Bypass */
   if (lower.startsWith('bypass ')) {
     const url = text.slice(7).trim();
     if (!url) return replyText(env, psid, 'USAGE: bypass <url>');
     await replyText(env, psid, 'BYPASS REQUEST\n  ' + url.slice(0, 70));
     const r = await bypassUrl(url);
-    if (r.ok && r.direct) {
-      return sendGifAndText(env, psid, 'BYPASS DONE\n  ' + r.direct);
-    }
+    if (r.ok && r.direct) return sendGifAndText(env, psid, 'BYPASS DONE\n  ' + r.direct);
     return sendGifAndText(env, psid, 'BYPASS FAILED\n  ' + (r.error || 'unknown error'));
   }
 
-  /* NGL */
   if (lower.startsWith('test ')) {
     const user = text.split(/\s+/)[1];
     if (!user) return replyText(env, psid, 'USAGE: test <user>');
@@ -582,7 +598,6 @@ async function handleCommand(env, psid, rawText) {
       '  404     ' + stats.fof + '\n  errors  ' + stats.err + '\n  elapsed ' + stats.elapsed + 's');
   }
 
-  /* SMS */
   if (lower === 'smshelp') {
     let out = 'SMS SERVICES (' + SMS_NAMES.length + ')\n';
     SMS_NAMES.forEach((n, i) => { out += '  ' + String(i + 1).padStart(2, ' ') + '. ' + n + '\n'; });
@@ -614,10 +629,9 @@ async function handleCommand(env, psid, rawText) {
     return sendGifAndText(env, psid, 'SMS DONE\n  rounds ' + stats.rounds + '\n  sent  ' + stats.ok + '  (' + (stats.via || 'cf') + ')\n  fail  ' + stats.fail);
   }
 
-  /* AM */
   if (lower === 'amhelp') {
     return sendGifAndText(env, psid,
-      'ALIGHT MOTION FLOW\n\nSTEP 1\n  am <email>\n  -> magic link sent\n\nSTEP 2\n  open email, copy link\n\nSTEP 3\n  amverify <email> <link>');
+      'ALIGHT MOTION FLOW\n\nSTEP 1\n  am <email>\n\nSTEP 2\n  open email, copy link\n\nSTEP 3\n  amverify <email> <link>');
   }
 
   if (lower.startsWith('amverify ')) {
@@ -647,7 +661,6 @@ async function handleCommand(env, psid, rawText) {
     return sendGifAndText(env, psid, 'AM FAILED\n  ' + JSON.stringify(r.upstream).slice(0, 200));
   }
 
-  /* Unknown */
   return sendGifAndText(env, psid, 'Unknown command. Send "menu".\n\n' + COMMANDS_TEXT);
 }
 
@@ -662,7 +675,7 @@ export default {
         return new Response(null, { status: 204, headers: { ...CORS, 'X-Worker-Version': VERSION } });
       }
 
-      /* -------- PRIVACY (preserved) -------- */
+      /* -------- PRIVACY -------- */
       if (url.pathname === '/privacy') {
         return new Response(
 `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Privacy Policy</title></head>
@@ -673,7 +686,7 @@ export default {
           { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
       }
 
-      /* -------- WEBHOOK VERIFY (preserved) -------- */
+      /* -------- WEBHOOK VERIFY -------- */
       if (url.pathname === '/webhook' && request.method === 'GET') {
         const mode      = url.searchParams.get('hub.mode');
         const token     = url.searchParams.get('hub.verify_token');
@@ -684,7 +697,7 @@ export default {
         return new Response('Forbidden', { status: 403 });
       }
 
-      /* -------- WEBHOOK EVENTS (preserved) -------- */
+      /* -------- WEBHOOK EVENTS -------- */
       if (url.pathname === '/webhook' && request.method === 'POST') {
         const raw = await request.text();
         let data;
@@ -695,8 +708,22 @@ export default {
           for (const m of (entry.messaging || [])) {
             const psid = m.sender && m.sender.id;
             if (!psid) continue;
-            const text = (m.message && m.message.text) || '';
-            if (text) ctx.waitUntil(handleCommand(env, psid, text));
+            const text     = (m.message && m.message.text) || '';
+            const postback = (m.postback && m.postback.payload) || '';
+            const mid      = (m.message && m.message.mid) || '';
+            const cmd = text || postback;
+
+            if (cmd) {
+              ctx.waitUntil((async () => {
+                if (mid) await react(env, psid, mid, '👀');
+                try {
+                  await handleCommand(env, psid, cmd);
+                  if (mid) await react(env, psid, mid, '✅');
+                } catch (e) {
+                  if (mid) await react(env, psid, mid, '❌');
+                }
+              })());
+            }
           }
         }
         return new Response('EVENT_RECEIVED', { status: 200 });
